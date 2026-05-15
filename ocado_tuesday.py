@@ -44,7 +44,14 @@ SEL_SEARCH_INPUT = (
     '[data-testid="search-input"]'
 )
 SEL_SEARCH_SUBMIT = 'button[type="submit"][aria-label*="earch"], button:has-text("Search")'
-SEL_PRODUCT_CARD = '[data-testid^="product-tile"], article[data-product-id], li[data-product-id]'
+SEL_PRODUCT_CARD = (
+    'a[href*="/products/"], '
+    '[data-testid*="product-tile"] a, '
+    '[data-testid*="product-card"] a, '
+    'article[data-product-id] a, '
+    'li[data-product-id] a, '
+    '[data-sku] a'
+)
 SEL_PRODUCT_TITLE = 'h1, [data-testid="product-title"]'
 SEL_ADD_BUTTON = 'button:has-text("Add"), button[data-testid*="add-to-trolley"]'
 SEL_QTY_PLUS = 'button[aria-label*="ncrease"], button:has-text("+")'
