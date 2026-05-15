@@ -253,6 +253,7 @@ class Result:
     item: Item
     status: Literal["ok", "not_found", "error"]
     detail: str = ""
+    product_url: str = ""
 
 
 # Matches sizes that confuse Ocado's search: '300g', '1.5l', '8x330ml', '6 x 90g', etc.
@@ -378,7 +379,7 @@ def add_item(page: Page, item: Item) -> Result:
             plus.click()
             log.info("   qty +1 (now %d)", n + 2)
 
-        return Result(item, "ok", actual)
+        return Result(item, "ok", actual, product_url=page.url)
     except PWTimeout as e:
         return Result(item, "error", f"timeout: {e}")
     except Exception as e:  # noqa: BLE001
@@ -409,6 +410,42 @@ def print_summary(results: list[Result], log_path: Path) -> None:
             print(f"  - {r.item.name} [{r.item.source}]: {r.detail}")
     print(f"\nFull log: {log_path}")
     print("=" * 41)
+
+
+def write_product_urls(xlsx_path: Path, results: list[Result], log: logging.Logger) -> int:
+    """Write captured product URLs to the Notes column for Tier 1 items.
+
+    Always overwrites existing Notes content. Only writes for successful adds.
+    Returns the number of cells updated.
+    """
+    tier1_urls = {
+        r.item.name: r.product_url
+        for r in results
+        if r.item.source == "tier1" and r.status == "ok" and r.product_url
+    }
+    if not tier1_urls:
+        log.info("No Tier 1 URLs to write back.")
+        return 0
+    wb = openpyxl.load_workbook(xlsx_path)
+    ws = wb["Tier 1 – Essentials"]
+    updated = 0
+    # Notes is column 5 (index 4) — see header row
+    for row in ws.iter_rows(min_row=3):
+        name_cell = row[0]
+        if not name_cell.value:
+            continue
+        name = str(name_cell.value).strip()
+        if name in tier1_urls:
+            row[4].value = tier1_urls[name]
+            updated += 1
+    wb.save(xlsx_path)
+    return updated
+
+
+def confirm_write_urls(count: int) -> bool:
+    print(f"\n{count} product URL(s) captured this run.")
+    answer = input("Write them back to the spreadsheet's Notes column? [y/N]: ").strip().lower()
+    return answer == "y"
 
 
 def confirm_stale_week(week_str: str, expected: date) -> bool:
@@ -472,6 +509,17 @@ def main() -> int:
             log.exception("Run aborted: %s", e)
 
         print_summary(results, log_path)
+
+        tier1_ok = sum(1 for r in results if r.item.source == "tier1" and r.status == "ok" and r.product_url)
+        if tier1_ok > 0 and confirm_write_urls(tier1_ok):
+            try:
+                n = write_product_urls(XLSX_PATH, results, log)
+                log.info("Wrote %d URLs to %s", n, XLSX_PATH.name)
+            except PermissionError:
+                log.error("Could not write to %s — is Excel/Numbers holding it open? Close it and try again.", XLSX_PATH.name)
+            except Exception as e:  # noqa: BLE001
+                log.exception("Failed to write URLs: %s", e)
+
         print("\nBrowser left open for review. Close the Chromium window when done — your session will be saved.")
         try:
             page.wait_for_event("close", timeout=0)
