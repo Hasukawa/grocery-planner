@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -247,6 +248,21 @@ class Result:
     detail: str = ""
 
 
+# Matches a number (optional decimal) followed by a unit, anywhere in the string.
+# Ocado's search treats specific sizes like "300g" as too-strict filters and returns
+# zero results — strip them so the search matches by name.
+_SIZE_PATTERN = re.compile(
+    r'\s*\b\d+(?:\.\d+)?\s*(?:g|kg|mg|ml|cl|l|oz|lb|pints?|pt)\b\s*',
+    re.IGNORECASE,
+)
+
+
+def strip_size_suffix(term: str) -> str:
+    """Remove '300g', '1kg', '750ml', '2 pints' etc. from a search term."""
+    cleaned = _SIZE_PATTERN.sub(' ', term)
+    return re.sub(r'\s+', ' ', cleaned).strip()
+
+
 def _titles_roughly_match(actual_title: str, search_term: str) -> bool:
     """True if the longest word in search_term appears (case-insensitive) in actual_title."""
     words = [w for w in search_term.split() if len(w) >= 4]
@@ -263,9 +279,12 @@ def add_item(page: Page, item: Item) -> Result:
         if item.notes.startswith("https://www.ocado.com"):
             page.goto(item.notes, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         else:
+            search_term = strip_size_suffix(item.search_term)
+            if search_term != item.search_term:
+                log.info("   search term cleaned: '%s' → '%s'", item.search_term, search_term)
             search_box = page.locator(SEL_SEARCH_INPUT).first
             search_box.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
-            search_box.fill(item.search_term)
+            search_box.fill(search_term)
             search_box.press("Enter")
             page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
             first_card = page.locator(SEL_PRODUCT_CARD).first
