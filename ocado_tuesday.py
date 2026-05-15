@@ -270,6 +270,28 @@ def strip_size_suffix(term: str) -> str:
     return re.sub(r'\s+', ' ', cleaned).strip()
 
 
+def _try_search_suggestion(page: Page, log: logging.Logger) -> bool:
+    """If page shows 'No results for', click the first suggestion chip and return True."""
+    no_results = page.get_by_text("No results for", exact=False).first
+    try:
+        no_results.wait_for(state="visible", timeout=2_000)
+    except PWTimeout:
+        return False
+    suggestion = no_results.locator('xpath=following::button[1]')
+    try:
+        suggestion.wait_for(state="visible", timeout=2_000)
+    except PWTimeout:
+        return False
+    text = (suggestion.text_content() or "").strip()
+    log.info("   no results — clicking suggestion: %r", text)
+    suggestion.click()
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    except PWTimeout:
+        pass
+    return True
+
+
 def _titles_roughly_match(actual_title: str, search_term: str) -> bool:
     """True if the longest word in search_term appears (case-insensitive) in actual_title."""
     words = [w for w in search_term.split() if len(w) >= 4]
@@ -298,7 +320,16 @@ def add_item(page: Page, item: Item) -> Result:
             try:
                 first_card.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
             except PWTimeout:
-                return Result(item, "not_found", f"no results for '{item.search_term}'")
+                # "No results" fallback: Ocado often shows a shorter suggestion chip
+                # ("Here are some product recommendations…"). Try clicking the first
+                # such chip and re-check for products.
+                if _try_search_suggestion(page, log):
+                    try:
+                        first_card.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+                    except PWTimeout:
+                        return Result(item, "not_found", f"no results for '{search_term}' (suggestion also empty)")
+                else:
+                    return Result(item, "not_found", f"no results for '{search_term}'")
             first_card.click()
 
         title_loc = page.locator(SEL_PRODUCT_TITLE).first
