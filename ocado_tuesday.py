@@ -439,31 +439,59 @@ def print_summary(results: list[Result], log_path: Path) -> None:
 
 
 def write_product_urls(xlsx_path: Path, results: list[Result], log: logging.Logger) -> int:
-    """Write captured product URLs to the Notes column for Tier 1 items.
+    """Write captured product URLs back to the spreadsheet.
 
-    Always overwrites existing Notes content. Only writes for successful adds.
-    Returns the number of cells updated.
+    - Tier 1 results → "Tier 1 – Essentials" sheet, Notes column (col 5)
+    - Tier 2 results → "Rotation Pool" sheet, Notes column (col 7)
+
+    Matches by exact Item Name. Always overwrites existing Notes content for
+    matching rows. Returns the number of cells updated across both sheets.
     """
     tier1_urls = {
         r.item.name: r.product_url
         for r in results
         if r.item.source == "tier1" and r.status == "ok" and r.product_url
     }
-    if not tier1_urls:
-        log.info("No Tier 1 URLs to write back.")
+    tier2_urls = {
+        r.item.name: r.product_url
+        for r in results
+        if r.item.source == "tier2" and r.status == "ok" and r.product_url
+    }
+    if not tier1_urls and not tier2_urls:
+        log.info("No URLs to write back.")
         return 0
     wb = openpyxl.load_workbook(xlsx_path)
-    ws = wb["Tier 1 – Essentials"]
     updated = 0
-    # Notes is column 5 (index 4) — see header row
-    for row in ws.iter_rows(min_row=3):
-        name_cell = row[0]
-        if not name_cell.value:
-            continue
-        name = str(name_cell.value).strip()
-        if name in tier1_urls:
-            row[4].value = tier1_urls[name]
-            updated += 1
+    if tier1_urls:
+        ws = wb["Tier 1 – Essentials"]
+        # Notes is column 5 (index 4)
+        for row in ws.iter_rows(min_row=3):
+            name_cell = row[0]
+            if not name_cell.value:
+                continue
+            name = str(name_cell.value).strip()
+            if name in tier1_urls:
+                row[4].value = tier1_urls[name]
+                updated += 1
+    if tier2_urls:
+        ws = wb["Rotation Pool"]
+        # Notes is column 7 (index 6)
+        matched = set()
+        for row in ws.iter_rows(min_row=3):
+            name_cell = row[0]
+            if not name_cell.value:
+                continue
+            name = str(name_cell.value).strip()
+            if name in tier2_urls:
+                row[6].value = tier2_urls[name]
+                matched.add(name)
+                updated += 1
+        unmatched = set(tier2_urls) - matched
+        if unmatched:
+            log.warning(
+                "Tier 2 names not found in Rotation Pool sheet (URL not written): %s",
+                ", ".join(sorted(unmatched)),
+            )
     wb.save(xlsx_path)
     return updated
 
@@ -563,8 +591,8 @@ def main(argv: list[str] | None = None) -> int:
 
         print_summary(results, log_path)
 
-        tier1_ok = sum(1 for r in results if r.item.source == "tier1" and r.status == "ok" and r.product_url)
-        if tier1_ok > 0 and confirm_write_urls(tier1_ok):
+        capturable = sum(1 for r in results if r.status == "ok" and r.product_url)
+        if capturable > 0 and confirm_write_urls(capturable):
             try:
                 n = write_product_urls(XLSX_PATH, results, log)
                 log.info("Wrote %d URLs to %s", n, XLSX_PATH.name)
