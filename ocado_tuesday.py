@@ -18,6 +18,7 @@ from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 ROOT = Path(__file__).parent
 XLSX_PATH = ROOT / "Ocado_Order_Manager.xlsx"
 JSON_PATH = ROOT / "ocado_tuesday.json"
+JSON_DOWNLOADS_FALLBACK = Path.home() / "Downloads" / "ocado_tuesday.json"
 SESSION_DIR = ROOT / ".ocado_session"
 LOGS_DIR = ROOT / "logs"
 
@@ -114,6 +115,21 @@ def load_tier1(xlsx_path: Path) -> list[Item]:
             )
         )
     return items
+
+
+def resolve_tier2_json_path(log: logging.Logger) -> Path | None:
+    """Find the Tier 2 JSON, preferring the project root over ~/Downloads.
+
+    If the file is only present in ~/Downloads, move it to the project root so
+    future runs find it there directly. Returns None if neither location has it.
+    """
+    if JSON_PATH.exists():
+        return JSON_PATH
+    if JSON_DOWNLOADS_FALLBACK.exists():
+        log.info("Found %s in Downloads — moving to project root", JSON_DOWNLOADS_FALLBACK.name)
+        JSON_DOWNLOADS_FALLBACK.rename(JSON_PATH)
+        return JSON_PATH
+    return None
 
 
 def upcoming_wednesday(today: date) -> date:
@@ -495,12 +511,12 @@ def main(argv: list[str] | None = None) -> int:
         log.info("Capturing URLs for %d items (%d already have a URL, skipped)", len(items_to_visit), skipped)
         expected_week = upcoming_wednesday(date.today())
     else:
-        try:
-            tier2, week_str = load_tier2(JSON_PATH)
-        except FileNotFoundError:
-            log.error("Tier 2 JSON not found at %s — aborting.", JSON_PATH)
+        json_path = resolve_tier2_json_path(log)
+        if json_path is None:
+            log.error("Tier 2 JSON not found at %s or %s — aborting.", JSON_PATH, JSON_DOWNLOADS_FALLBACK)
             return 1
-        log.info("Loaded %d Tier 2 items (week=%s)", len(tier2), week_str)
+        tier2, week_str = load_tier2(json_path)
+        log.info("Loaded %d Tier 2 items (week=%s) from %s", len(tier2), week_str, json_path.name)
 
         expected_week = upcoming_wednesday(date.today())
         if week_str != expected_week.isoformat():
