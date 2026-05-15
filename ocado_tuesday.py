@@ -1,6 +1,7 @@
 """Ocado Tuesday automation script."""
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import re
@@ -330,9 +331,14 @@ def _titles_roughly_match(actual_title: str, search_term: str) -> bool:
     return longest.lower() in actual_title.lower()
 
 
-def add_item(page: Page, item: Item) -> Result:
+def add_item(page: Page, item: Item, capture_only: bool = False) -> Result:
+    """Search for or navigate to the item's product page and add it to the basket.
+
+    If capture_only=True, navigate to the product page but do NOT add to basket
+    or change quantity. Used to populate URL cache without touching the basket.
+    """
     log = logging.getLogger("ocado")
-    log.info("→ %s [%s] qty=%d", item.name, item.source, item.qty)
+    log.info("→ %s [%s] qty=%d%s", item.name, item.source, item.qty, " (capture-only)" if capture_only else "")
     dismiss_modals(page, log)
     try:
         if item.notes.startswith("https://www.ocado.com"):
@@ -367,6 +373,10 @@ def add_item(page: Page, item: Item) -> Result:
         actual = (title_loc.text_content() or "").strip()
         if not _titles_roughly_match(actual, item.search_term):
             log.warning("Title mismatch: wanted ~'%s', got '%s' — continuing", item.search_term, actual)
+
+        if capture_only:
+            log.info("   captured URL: %s", page.url)
+            return Result(item, "ok", actual, product_url=page.url)
 
         add_btn = page.locator(SEL_ADD_BUTTON).first
         add_btn.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
@@ -454,28 +464,52 @@ def confirm_stale_week(week_str: str, expected: date) -> bool:
     return answer == "y"
 
 
-def main() -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Ocado Tuesday automation")
+    parser.add_argument(
+        "--capture-only",
+        action="store_true",
+        help="Visit each Tier 1 item's product page to grab its URL and write it back to the spreadsheet's Notes column. Skips clearing the basket and skips adding items. Items that already have a URL in Notes are skipped.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     log_path = setup_logging()
     log = logging.getLogger("ocado")
     log.info("Run starting. Log: %s", log_path)
+    if args.capture_only:
+        log.warning("CAPTURE-ONLY mode: visiting items to grab URLs. Basket will NOT be touched.")
 
     tier1 = load_tier1(XLSX_PATH)
     log.info("Loaded %d Tier 1 items", len(tier1))
 
-    try:
-        tier2, week_str = load_tier2(JSON_PATH)
-    except FileNotFoundError:
-        log.error("Tier 2 JSON not found at %s — aborting.", JSON_PATH)
-        return 1
-    log.info("Loaded %d Tier 2 items (week=%s)", len(tier2), week_str)
-
-    expected_week = upcoming_wednesday(date.today())
-    if week_str != expected_week.isoformat():
-        if not confirm_stale_week(week_str, expected_week):
-            log.info("User declined stale JSON — aborting.")
+    if args.capture_only:
+        # In capture mode we only need Tier 1; skip items that already have a URL.
+        items_to_visit = [
+            it for it in tier1
+            if not it.notes.startswith("https://www.ocado.com")
+        ]
+        skipped = len(tier1) - len(items_to_visit)
+        log.info("Capturing URLs for %d items (%d already have a URL, skipped)", len(items_to_visit), skipped)
+        expected_week = upcoming_wednesday(date.today())
+    else:
+        try:
+            tier2, week_str = load_tier2(JSON_PATH)
+        except FileNotFoundError:
+            log.error("Tier 2 JSON not found at %s — aborting.", JSON_PATH)
             return 1
+        log.info("Loaded %d Tier 2 items (week=%s)", len(tier2), week_str)
 
-    all_items = tier1 + tier2
+        expected_week = upcoming_wednesday(date.today())
+        if week_str != expected_week.isoformat():
+            if not confirm_stale_week(week_str, expected_week):
+                log.info("User declined stale JSON — aborting.")
+                return 1
+        items_to_visit = tier1 + tier2
+
+    all_items = items_to_visit
     results: list[Result] = []
 
     with sync_playwright() as p:
@@ -490,14 +524,17 @@ def main() -> int:
 
         try:
             ensure_logged_in(page)
-            if SKIP_CLEAR:
+            if args.capture_only:
+                log.info("Skipping basket clear (capture-only mode).")
+                page.goto(URL_HOME, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+            elif SKIP_CLEAR:
                 log.warning("SKIP_CLEAR=True — basket-clearing disabled. Clear the basket manually in the browser, then press Enter.")
                 input(">>> Press Enter once the basket is empty (or to proceed anyway): ")
                 page.goto(URL_HOME, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
             else:
                 clear_reserved_order(page, expected_week)
             for i, item in enumerate(all_items, 1):
-                result = add_item(page, item)
+                result = add_item(page, item, capture_only=args.capture_only)
                 results.append(result)
                 if result.status == "ok":
                     log.info("[%d/%d] OK: %s", i, len(all_items), item.name)
@@ -534,4 +571,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
