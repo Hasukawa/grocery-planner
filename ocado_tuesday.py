@@ -21,7 +21,7 @@ LOGS_DIR = ROOT / "logs"
 
 URL_RESERVED = "https://www.ocado.com/webshop/reservedOrder.do"
 URL_HOME = "https://www.ocado.com/"
-LOGIN_URL_FRAGMENTS = ("/login", "/signin")
+LOGIN_URL_FRAGMENTS = ("/login", "/signin", "sign-in", "log-in", "accounts.ocado", "/auth")
 
 # Selectors — comma-separated fallbacks. Tweak on first run if Ocado has changed.
 SEL_SEARCH_INPUT = '[data-testid="search-input"], input[name="search"], input[type="search"]'
@@ -32,7 +32,14 @@ SEL_ADD_BUTTON = 'button:has-text("Add"), button[data-testid*="add-to-trolley"]'
 SEL_QTY_PLUS = 'button[aria-label*="ncrease"], button:has-text("+")'
 SEL_REMOVE_ALL = 'button:has-text("Remove all"), button:has-text("Empty trolley"), button:has-text("Clear trolley")'
 SEL_REMOVE_CONFIRM = 'button:has-text("Yes"), button:has-text("Confirm"), button:has-text("Remove")'
-SEL_SIGN_IN = 'a:has-text("Sign in"), button:has-text("Sign in")'
+# Positive logged-in markers — only appear when authenticated
+SEL_LOGGED_IN_MARKER = 'a:has-text("Sign out"), a:has-text("Log out"), button:has-text("Sign out"), button:has-text("Log out")'
+# Logged-out / login-page markers — fields and buttons only present when NOT authenticated
+SEL_LOGGED_OUT_MARKER = (
+    'input[type="password"], '
+    'a:has-text("Sign in"), a:has-text("Log in"), '
+    'button:has-text("Sign in"), button:has-text("Log in")'
+)
 
 ELEMENT_TIMEOUT_MS = 15_000
 NAVIGATION_TIMEOUT_MS = 30_000
@@ -114,30 +121,50 @@ def load_tier2(json_path: Path) -> tuple[list[Item], str]:
     return items, week_str
 
 
-def is_logged_out(page: Page) -> bool:
+def login_state(page: Page) -> Literal["in", "out", "unknown"]:
+    """Positive-marker login detection. Returns 'in' / 'out' / 'unknown'."""
     url = page.url
     if any(frag in url for frag in LOGIN_URL_FRAGMENTS):
-        return True
-    sign_in = page.locator(SEL_SIGN_IN).first
+        return "out"
     try:
-        return sign_in.is_visible(timeout=2_000)
+        if page.locator(SEL_LOGGED_IN_MARKER).first.is_visible(timeout=1_500):
+            return "in"
     except PWTimeout:
-        return False
+        pass
+    try:
+        if page.locator(SEL_LOGGED_OUT_MARKER).first.is_visible(timeout=1_500):
+            return "out"
+    except PWTimeout:
+        pass
+    return "unknown"
 
 
 def ensure_logged_in(page: Page) -> None:
     log = logging.getLogger("ocado")
     page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
-    page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
-    for attempt in (1, 2):
-        if not is_logged_out(page):
-            log.info("Login check OK")
-            return
-        log.warning("Not logged in (attempt %d). Log in in the browser, then press Enter here.", attempt)
-        input(">>> Press Enter once you've logged in: ")
-        page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+    try:
         page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
-    raise RuntimeError("Still not logged in after retry — aborting.")
+    except PWTimeout:
+        pass
+    for attempt in (1, 2):
+        state = login_state(page)
+        log.info("Login check: state=%s url=%s", state, page.url)
+        if state == "in":
+            return
+        if state == "unknown":
+            log.warning("Login state unclear — please confirm manually.")
+        else:
+            log.warning("Not logged in (attempt %d).", attempt)
+        print(f">>> Browser is at: {page.url}")
+        print(">>> If not already logged in, log in now. Then press Enter here to continue.")
+        input(">>> ")
+        page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+        try:
+            page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+        except PWTimeout:
+            pass
+    if login_state(page) == "out":
+        raise RuntimeError("Still not logged in after retry — aborting.")
 
 
 def clear_reserved_order(page: Page) -> None:
@@ -291,8 +318,15 @@ def main() -> int:
         try:
             ensure_logged_in(page)
             clear_reserved_order(page)
-            for item in all_items:
-                results.append(add_item(page, item))
+            for i, item in enumerate(all_items, 1):
+                result = add_item(page, item)
+                results.append(result)
+                if result.status == "ok":
+                    log.info("[%d/%d] OK: %s", i, len(all_items), item.name)
+                elif result.status == "not_found":
+                    log.warning("[%d/%d] NOT FOUND: %s (%s)", i, len(all_items), item.name, result.detail)
+                else:
+                    log.error("[%d/%d] ERROR: %s (%s)", i, len(all_items), item.name, result.detail)
         except Exception as e:  # noqa: BLE001
             log.exception("Run aborted: %s", e)
 
