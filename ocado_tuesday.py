@@ -2,12 +2,52 @@
 from __future__ import annotations
 
 import json
+import logging
+import sys
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
 import openpyxl
+from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
+
+
+ROOT = Path(__file__).parent
+XLSX_PATH = ROOT / "Ocado_Order_Manager.xlsx"
+JSON_PATH = Path.home() / "Downloads" / "ocado_tuesday.json"
+SESSION_DIR = ROOT / ".ocado_session"
+LOGS_DIR = ROOT / "logs"
+
+URL_RESERVED = "https://www.ocado.com/webshop/reservedOrder.do"
+URL_HOME = "https://www.ocado.com/"
+LOGIN_URL_FRAGMENTS = ("/login", "/signin")
+
+# Selectors — comma-separated fallbacks. Tweak on first run if Ocado has changed.
+SEL_SEARCH_INPUT = '[data-testid="search-input"], input[name="search"], input[type="search"]'
+SEL_SEARCH_SUBMIT = 'button[type="submit"][aria-label*="earch"], button:has-text("Search")'
+SEL_PRODUCT_CARD = '[data-testid^="product-tile"], article[data-product-id], li[data-product-id]'
+SEL_PRODUCT_TITLE = 'h1, [data-testid="product-title"]'
+SEL_ADD_BUTTON = 'button:has-text("Add"), button[data-testid*="add-to-trolley"]'
+SEL_QTY_PLUS = 'button[aria-label*="ncrease"], button:has-text("+")'
+SEL_REMOVE_ALL = 'button:has-text("Remove all"), button:has-text("Empty trolley"), button:has-text("Clear trolley")'
+SEL_REMOVE_CONFIRM = 'button:has-text("Yes"), button:has-text("Confirm"), button:has-text("Remove")'
+SEL_SIGN_IN = 'a:has-text("Sign in"), button:has-text("Sign in")'
+
+ELEMENT_TIMEOUT_MS = 15_000
+NAVIGATION_TIMEOUT_MS = 30_000
+
+
+def setup_logging() -> Path:
+    LOGS_DIR.mkdir(exist_ok=True)
+    log_path = LOGS_DIR / f"run-{datetime.now():%Y-%m-%d-%H%M}.log"
+    handler_file = logging.FileHandler(log_path)
+    handler_stdout = logging.StreamHandler(sys.stdout)
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    for h in (handler_file, handler_stdout):
+        h.setFormatter(fmt)
+    logging.basicConfig(level=logging.INFO, handlers=[handler_file, handler_stdout])
+    return log_path
 
 
 @dataclass
@@ -72,3 +112,196 @@ def load_tier2(json_path: Path) -> tuple[list[Item], str]:
             )
         )
     return items, week_str
+
+
+def is_logged_out(page: Page) -> bool:
+    url = page.url
+    if any(frag in url for frag in LOGIN_URL_FRAGMENTS):
+        return True
+    sign_in = page.locator(SEL_SIGN_IN).first
+    try:
+        return sign_in.is_visible(timeout=2_000)
+    except PWTimeout:
+        return False
+
+
+def ensure_logged_in(page: Page) -> None:
+    log = logging.getLogger("ocado")
+    page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+    page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    for attempt in (1, 2):
+        if not is_logged_out(page):
+            log.info("Login check OK")
+            return
+        log.warning("Not logged in (attempt %d). Log in in the browser, then press Enter here.", attempt)
+        input(">>> Press Enter once you've logged in: ")
+        page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+        page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    raise RuntimeError("Still not logged in after retry — aborting.")
+
+
+def clear_reserved_order(page: Page) -> None:
+    log = logging.getLogger("ocado")
+    log.info("Clearing reserved order…")
+    page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+    page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    remove_btn = page.locator(SEL_REMOVE_ALL).first
+    try:
+        remove_btn.wait_for(state="visible", timeout=5_000)
+    except PWTimeout:
+        log.info("No 'Remove all' button found — assuming basket already empty.")
+        return
+    remove_btn.click()
+    log.info("Clicked 'Remove all'.")
+    confirm = page.locator(SEL_REMOVE_CONFIRM).first
+    try:
+        confirm.wait_for(state="visible", timeout=3_000)
+        confirm.click()
+        log.info("Confirmed removal.")
+    except PWTimeout:
+        log.info("No confirmation dialog appeared — that's fine.")
+    page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+
+
+@dataclass
+class Result:
+    item: Item
+    status: Literal["ok", "not_found", "error"]
+    detail: str = ""
+
+
+def _titles_roughly_match(actual_title: str, search_term: str) -> bool:
+    """True if the longest word in search_term appears (case-insensitive) in actual_title."""
+    words = [w for w in search_term.split() if len(w) >= 4]
+    if not words:
+        return True
+    longest = max(words, key=len)
+    return longest.lower() in actual_title.lower()
+
+
+def add_item(page: Page, item: Item) -> Result:
+    log = logging.getLogger("ocado")
+    log.info("→ %s [%s] qty=%d", item.name, item.source, item.qty)
+    try:
+        if item.notes.startswith("https://www.ocado.com"):
+            page.goto(item.notes, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+        else:
+            search_box = page.locator(SEL_SEARCH_INPUT).first
+            search_box.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+            search_box.fill(item.search_term)
+            search_box.press("Enter")
+            page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+            first_card = page.locator(SEL_PRODUCT_CARD).first
+            try:
+                first_card.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+            except PWTimeout:
+                return Result(item, "not_found", f"no results for '{item.search_term}'")
+            first_card.click()
+
+        title_loc = page.locator(SEL_PRODUCT_TITLE).first
+        title_loc.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+        actual = (title_loc.text_content() or "").strip()
+        if not _titles_roughly_match(actual, item.search_term):
+            log.warning("Title mismatch: wanted ~'%s', got '%s' — continuing", item.search_term, actual)
+
+        add_btn = page.locator(SEL_ADD_BUTTON).first
+        add_btn.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+        add_btn.click()
+        log.info("   added 1")
+
+        for n in range(item.qty - 1):
+            plus = page.locator(SEL_QTY_PLUS).first
+            plus.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+            plus.click()
+            log.info("   qty +1 (now %d)", n + 2)
+
+        return Result(item, "ok", actual)
+    except PWTimeout as e:
+        return Result(item, "error", f"timeout: {e}")
+    except Exception as e:  # noqa: BLE001
+        return Result(item, "error", f"{type(e).__name__}: {e}")
+
+
+def print_summary(results: list[Result], log_path: Path) -> None:
+    tier1 = [r for r in results if r.item.source == "tier1"]
+    tier2 = [r for r in results if r.item.source == "tier2"]
+    ok1 = sum(1 for r in tier1 if r.status == "ok")
+    ok2 = sum(1 for r in tier2 if r.status == "ok")
+    not_found = [r for r in results if r.status == "not_found"]
+    errors = [r for r in results if r.status == "error"]
+
+    print()
+    print("=" * 41)
+    print("              SUMMARY")
+    print("=" * 41)
+    print(f"Tier 1: {ok1}/{len(tier1)} added")
+    print(f"Tier 2: {ok2}/{len(tier2)} added")
+    if not_found:
+        print(f"\nNot found ({len(not_found)}):")
+        for r in not_found:
+            print(f"  - {r.item.name} [{r.item.source}]   search: \"{r.item.search_term}\"")
+    if errors:
+        print(f"\nErrors ({len(errors)}):")
+        for r in errors:
+            print(f"  - {r.item.name} [{r.item.source}]: {r.detail}")
+    print(f"\nFull log: {log_path}")
+    print("=" * 41)
+
+
+def confirm_stale_week(week_str: str, expected: date) -> bool:
+    print(f"\n⚠  Tier 2 JSON week is '{week_str}', expected '{expected.isoformat()}'.")
+    answer = input("   Proceed anyway? [y/N]: ").strip().lower()
+    return answer == "y"
+
+
+def main() -> int:
+    log_path = setup_logging()
+    log = logging.getLogger("ocado")
+    log.info("Run starting. Log: %s", log_path)
+
+    tier1 = load_tier1(XLSX_PATH)
+    log.info("Loaded %d Tier 1 items", len(tier1))
+
+    try:
+        tier2, week_str = load_tier2(JSON_PATH)
+    except FileNotFoundError:
+        log.error("Tier 2 JSON not found at %s — aborting.", JSON_PATH)
+        return 1
+    log.info("Loaded %d Tier 2 items (week=%s)", len(tier2), week_str)
+
+    expected_week = upcoming_wednesday(date.today())
+    if week_str != expected_week.isoformat():
+        if not confirm_stale_week(week_str, expected_week):
+            log.info("User declined stale JSON — aborting.")
+            return 1
+
+    all_items = tier1 + tier2
+    results: list[Result] = []
+
+    with sync_playwright() as p:
+        context = p.chromium.launch_persistent_context(
+            user_data_dir=str(SESSION_DIR),
+            headless=False,
+            viewport={"width": 1400, "height": 900},
+        )
+        context.set_default_timeout(ELEMENT_TIMEOUT_MS)
+        context.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
+        page = context.pages[0] if context.pages else context.new_page()
+
+        try:
+            ensure_logged_in(page)
+            clear_reserved_order(page)
+            for item in all_items:
+                results.append(add_item(page, item))
+        except Exception as e:  # noqa: BLE001
+            log.exception("Run aborted: %s", e)
+
+        print_summary(results, log_path)
+        input("\nBrowser left open for review. Press Enter to close.")
+        context.close()
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
