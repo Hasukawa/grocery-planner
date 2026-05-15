@@ -269,6 +269,35 @@ def strip_size_suffix(term: str) -> str:
     return re.sub(r'\s+', ' ', cleaned).strip()
 
 
+SEL_MODAL_CLOSE = (
+    'button[aria-label="Close" i], '
+    'button[aria-label*="close" i], '
+    '[role="dialog"] button:has-text("Close"), '
+    '[role="dialog"] button:has-text("×"), '
+    '[role="dialog"] button:has-text("Not now"), '
+    '[role="dialog"] button:has-text("No thanks")'
+)
+
+
+def dismiss_modals(page: Page, log: logging.Logger) -> None:
+    """Close any open modal/dialog overlay. Safe to call when none is present."""
+    # Press Escape first — handles most React modals
+    try:
+        if page.locator('.ReactModalPortal, [role="dialog"]').first.is_visible(timeout=500):
+            page.keyboard.press("Escape")
+            log.info("   pressed Escape to dismiss modal")
+    except PWTimeout:
+        pass
+    # If still present, try clicking a close button
+    try:
+        close = page.locator(SEL_MODAL_CLOSE).first
+        if close.is_visible(timeout=500):
+            close.click()
+            log.info("   clicked modal close button")
+    except PWTimeout:
+        pass
+
+
 def _try_search_suggestion(page: Page, log: logging.Logger) -> bool:
     """If page shows 'No results for', click the first suggestion chip and return True."""
     no_results = page.get_by_text("No results for", exact=False).first
@@ -303,6 +332,7 @@ def _titles_roughly_match(actual_title: str, search_term: str) -> bool:
 def add_item(page: Page, item: Item) -> Result:
     log = logging.getLogger("ocado")
     log.info("→ %s [%s] qty=%d", item.name, item.source, item.qty)
+    dismiss_modals(page, log)
     try:
         if item.notes.startswith("https://www.ocado.com"):
             page.goto(item.notes, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
