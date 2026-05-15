@@ -16,7 +16,7 @@ from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 
 ROOT = Path(__file__).parent
 XLSX_PATH = ROOT / "Ocado_Order_Manager.xlsx"
-JSON_PATH = Path.home() / "Downloads" / "ocado_tuesday.json"
+JSON_PATH = ROOT / "ocado_tuesday.json"
 SESSION_DIR = ROOT / ".ocado_session"
 LOGS_DIR = ROOT / "logs"
 

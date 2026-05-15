@@ -16,7 +16,7 @@ Weekly script that clears my reserved Ocado order and refills it from a Tier 1 E
 
 ## Weekly run
 
-1. Generate `~/Downloads/ocado_tuesday.json` from the checklist app. Format:
+1. Generate `~/Code/grocery-planner/ocado_tuesday.json` from the checklist app. Format:
    ```json
    {
      "week": "2026-05-13",
