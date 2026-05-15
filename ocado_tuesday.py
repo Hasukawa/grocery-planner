@@ -472,8 +472,15 @@ def main() -> int:
             log.exception("Run aborted: %s", e)
 
         print_summary(results, log_path)
-        input("\nBrowser left open for review. Press Enter to close.")
-        context.close()
+        print("\nBrowser left open for review. Close the Chromium window when done — your session will be saved.")
+        try:
+            page.wait_for_event("close", timeout=0)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            context.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     return 0
 
