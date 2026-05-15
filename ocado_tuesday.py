@@ -19,9 +19,13 @@ JSON_PATH = Path.home() / "Downloads" / "ocado_tuesday.json"
 SESSION_DIR = ROOT / ".ocado_session"
 LOGS_DIR = ROOT / "logs"
 
-URL_RESERVED = "https://www.ocado.com/webshop/reservedOrder.do"
 URL_HOME = "https://www.ocado.com/"
+# Old reservedOrder.do URL returns 404 — modern URL TBD. For now, use home page as
+# the "anchor" page for login checks and search. Clearing the reserved order is
+# disabled until we identify the current URL.
+URL_RESERVED = URL_HOME
 LOGIN_URL_FRAGMENTS = ("/login", "/signin", "sign-in", "log-in", "accounts.ocado", "/auth")
+SKIP_CLEAR = True  # Set False once we have a working clear-basket flow
 
 # Selectors — comma-separated fallbacks. Tweak on first run if Ocado has changed.
 SEL_SEARCH_INPUT = '[data-testid="search-input"], input[name="search"], input[type="search"]'
@@ -317,7 +321,12 @@ def main() -> int:
 
         try:
             ensure_logged_in(page)
-            clear_reserved_order(page)
+            if SKIP_CLEAR:
+                log.warning("SKIP_CLEAR=True — basket-clearing disabled. Clear the basket manually in the browser, then press Enter.")
+                input(">>> Press Enter once the basket is empty (or to proceed anyway): ")
+                page.goto(URL_HOME, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+            else:
+                clear_reserved_order(page)
             for i, item in enumerate(all_items, 1):
                 result = add_item(page, item)
                 results.append(result)
