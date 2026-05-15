@@ -20,12 +20,15 @@ SESSION_DIR = ROOT / ".ocado_session"
 LOGS_DIR = ROOT / "logs"
 
 URL_HOME = "https://www.ocado.com/"
-# Old reservedOrder.do URL returns 404 — modern URL TBD. For now, use home page as
-# the "anchor" page for login checks and search. Clearing the reserved order is
-# disabled until we identify the current URL.
+# Use the home page as the anchor for login checks + as a known-good page to search from.
 URL_RESERVED = URL_HOME
+# Modern orders flow:
+#   /orders                       → list of upcoming Wednesday cards
+#   /orders/{ID}/details          → click into a specific week
+#   then click "Edit order"       → enters editable basket
+URL_ORDERS_LIST = "https://www.ocado.com/orders"
 LOGIN_URL_FRAGMENTS = ("/login", "/signin", "sign-in", "log-in", "accounts.ocado", "/auth")
-SKIP_CLEAR = True  # Set False once we have a working clear-basket flow
+SKIP_CLEAR = True  # Set False once we've smoke-tested the clear-basket flow
 
 # Selectors — comma-separated fallbacks. Tweak on first run if Ocado has changed.
 SEL_SEARCH_INPUT = '[data-testid="search-input"], input[name="search"], input[type="search"]'
@@ -171,27 +174,60 @@ def ensure_logged_in(page: Page) -> None:
         raise RuntimeError("Still not logged in after retry — aborting.")
 
 
-def clear_reserved_order(page: Page) -> None:
+def clear_reserved_order(page: Page, target_date: date) -> None:
+    """Navigate /orders → matching Wednesday card → Edit order → remove all.
+
+    Ocado lists upcoming orders as cards with text like 'Wed 20 May 9:00pm - 10:00pm'.
+    We match on 'Wed {DD} {Mon}' built from target_date.
+    """
     log = logging.getLogger("ocado")
-    log.info("Clearing reserved order…")
-    page.goto(URL_RESERVED, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
-    page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    log.info("Clearing reserved order for %s…", target_date.isoformat())
+    page.goto(URL_ORDERS_LIST, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    except PWTimeout:
+        pass
+
+    day_str = f"Wed {target_date.day} {target_date.strftime('%b')}"
+    log.info("Looking for order card: '%s'", day_str)
+    card = page.locator(f':has-text("{day_str}")').last  # `.last` skips the page heading
+    try:
+        card.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+    except PWTimeout:
+        log.warning("No order card found for '%s' — skipping clear.", day_str)
+        return
+    card.click()
+    try:
+        page.wait_for_url("**/orders/*/details*", timeout=NAVIGATION_TIMEOUT_MS)
+    except PWTimeout:
+        log.warning("Did not reach /orders/*/details after click — skipping clear.")
+        return
+
+    edit_btn = page.locator('button:has-text("Edit order"), a:has-text("Edit order")').first
+    try:
+        edit_btn.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+        edit_btn.click()
+    except PWTimeout:
+        log.warning("No 'Edit order' button — basket may already be in edit mode or empty.")
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+    except PWTimeout:
+        pass
+
     remove_btn = page.locator(SEL_REMOVE_ALL).first
     try:
         remove_btn.wait_for(state="visible", timeout=5_000)
+        remove_btn.click()
+        log.info("Clicked 'Remove all'.")
+        confirm = page.locator(SEL_REMOVE_CONFIRM).first
+        try:
+            confirm.wait_for(state="visible", timeout=3_000)
+            confirm.click()
+            log.info("Confirmed removal.")
+        except PWTimeout:
+            log.info("No confirmation dialog — that's fine.")
     except PWTimeout:
-        log.info("No 'Remove all' button found — assuming basket already empty.")
-        return
-    remove_btn.click()
-    log.info("Clicked 'Remove all'.")
-    confirm = page.locator(SEL_REMOVE_CONFIRM).first
-    try:
-        confirm.wait_for(state="visible", timeout=3_000)
-        confirm.click()
-        log.info("Confirmed removal.")
-    except PWTimeout:
-        log.info("No confirmation dialog appeared — that's fine.")
-    page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
+        log.info("No 'Remove all' button found in edit view — basket may already be empty.")
 
 
 @dataclass
@@ -326,7 +362,7 @@ def main() -> int:
                 input(">>> Press Enter once the basket is empty (or to proceed anyway): ")
                 page.goto(URL_HOME, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
             else:
-                clear_reserved_order(page)
+                clear_reserved_order(page, expected_week)
             for i, item in enumerate(all_items, 1):
                 result = add_item(page, item)
                 results.append(result)
