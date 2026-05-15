@@ -31,7 +31,17 @@ LOGIN_URL_FRAGMENTS = ("/login", "/signin", "sign-in", "log-in", "accounts.ocado
 SKIP_CLEAR = True  # Set False once we've smoke-tested the clear-basket flow
 
 # Selectors — comma-separated fallbacks. Tweak on first run if Ocado has changed.
-SEL_SEARCH_INPUT = '[data-testid="search-input"], input[name="search"], input[type="search"]'
+SEL_SEARCH_INPUT = (
+    'input[placeholder*="Find a product" i], '
+    'input[placeholder*="Find" i], '
+    'input[aria-label*="search" i], '
+    'input[role="searchbox"], '
+    'input[role="combobox"], '
+    '[role="search"] input, '
+    'input[type="search"], '
+    'input[name="search"], '
+    '[data-testid="search-input"]'
+)
 SEL_SEARCH_SUBMIT = 'button[type="submit"][aria-label*="earch"], button:has-text("Search")'
 SEL_PRODUCT_CARD = '[data-testid^="product-tile"], article[data-product-id], li[data-product-id]'
 SEL_PRODUCT_TITLE = 'h1, [data-testid="product-title"]'
