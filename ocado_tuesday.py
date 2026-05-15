@@ -255,11 +255,10 @@ class Result:
     detail: str = ""
 
 
-# Matches a number (optional decimal) followed by a unit, anywhere in the string.
-# Ocado's search treats specific sizes like "300g" as too-strict filters and returns
-# zero results — strip them so the search matches by name.
+# Matches sizes that confuse Ocado's search: '300g', '1.5l', '8x330ml', '6 x 90g', etc.
+# Ocado returns zero results when the search term contains a specific size.
 _SIZE_PATTERN = re.compile(
-    r'\s*\b\d+(?:\.\d+)?\s*(?:g|kg|mg|ml|cl|l|oz|lb|pints?|pt)\b\s*',
+    r'\s*\b\d+(?:\.\d+)?\s*(?:[x×]\s*\d+(?:\.\d+)?\s*)?(?:g|kg|mg|ml|cl|l|oz|lb|pints?|pt)\b\s*',
     re.IGNORECASE,
 )
 
