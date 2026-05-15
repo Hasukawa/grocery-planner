@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ocado Tuesday Checklist</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 1rem 1rem 6rem;
+    color: #222;
+    background: #fafafa;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  .week { color: #666; margin: 0 0 1.5rem; }
+  .summary { margin: 0 0 1rem; padding: 0.5rem 0.75rem; background: #fff; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 0.9rem; }
+  .category {
+    font-weight: 600;
+    margin: 1.5rem 0 0.5rem;
+    font-size: 0.85rem;
+    color: #5a2d8c;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 0.75rem;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin-bottom: 0.4rem;
+    gap: 0.6rem;
+  }
+  .item.checked { background: #f4eef9; border-color: #c8a8e0; }
+  .item input[type=checkbox] {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .item label {
+    flex: 1;
+    cursor: pointer;
+    user-select: none;
+  }
+  .item .qty {
+    width: 56px;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    text-align: center;
+  }
+  .item .qty:disabled { background: #f5f5f5; color: #aaa; }
+  .controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid #ddd;
+    backdrop-filter: blur(8px);
+  }
+  .controls-inner { max-width: 640px; margin: 0 auto; display: flex; gap: 0.75rem; align-items: center; }
+  button {
+    flex: 1;
+    font-size: 1rem;
+    padding: 0.85rem 1rem;
+    background: #5a2d8c;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:active { background: #421f68; }
+  .status { font-size: 0.85rem; color: #666; min-height: 1.2em; margin: 0; }
+</style>
+</head>
+<body>
+
+<h1>Ocado Tuesday</h1>
+<p class="week">Week of <span id="week"></span></p>
+<p class="summary"><span id="count">0</span> items selected</p>
+
+<div id="items"></div>
+
+<div class="controls">
+  <div class="controls-inner">
+    <button type="button" id="export-btn">Download JSON</button>
+  </div>
+  <p class="status" id="status"></p>
+</div>
+
+<script>
+const ITEMS = [
+  {
+    "name": "M&S 2 Chicken Kyivs",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "M&S 2 Chicken Kyivs 320g",
+    "notes": "Rotate with other proteins"
+  },
+  {
+    "name": "M&S Organic Chicken Drumsticks",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 3,
+    "search_term": "M&S Organic British Chicken Drumsticks 500g",
+    "notes": "Rotate with other proteins"
+  },
+  {
+    "name": "M&S Duck Breast Portions",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "M&S Select Farms British 2 Duck Breast Portions 265g",
+    "notes": "Buy 2 for \u00a310 deal"
+  },
+  {
+    "name": "M&S Scottish Salmon Fillets",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "M&S 4 Scottish Salmon Fillets Skin On 480g",
+    "notes": "Rotate with other proteins"
+  },
+  {
+    "name": "Unearthed Mild Kabanos",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Unearthed Mild Kabanos 105g",
+    "notes": ""
+  },
+  {
+    "name": "Pork Chops",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "M&S Heritage Gold British Outdoor Bred 2 Thick Cut Pork Chops",
+    "notes": ""
+  },
+  {
+    "name": "Turkey Steaks",
+    "category": "Protein",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Ocado British Turkey Breast Steaks",
+    "notes": ""
+  },
+  {
+    "name": "Snowdonia Black Bomber Cheddar",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Snowdonia Black Bomber Extra Mature Cheddar 200g",
+    "notes": ""
+  },
+  {
+    "name": "M&S Somerset Ripening Brie",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "M&S Somerset Ripening Brie 230g",
+    "notes": ""
+  },
+  {
+    "name": "Boursin Garlic & Herbs",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Boursin Garlic Herbs Soft French Cheese 150g",
+    "notes": ""
+  },
+  {
+    "name": "M&S Shaved Parmigiano Reggiano",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "M&S Shaved Parmigiano Reggiano 80g",
+    "notes": ""
+  },
+  {
+    "name": "Cathedral City Mini Snack Cheeses",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Cathedral City Mini Mature Snack Cheeses 6x20g",
+    "notes": "Kids snack"
+  },
+  {
+    "name": "Cheestrings Original",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Cheestrings Original 8x20g",
+    "notes": "Kids snack"
+  },
+  {
+    "name": "Leerdammer",
+    "category": "Cheese",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "Leerdammer Original 200g",
+    "notes": ""
+  },
+  {
+    "name": "M&S Salted Butter from Brittany",
+    "category": "Dairy",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "M&S Salted Butter from Brittany 250g",
+    "notes": ""
+  },
+  {
+    "name": "Yeo Valley Organic Unsalted Butter",
+    "category": "Dairy",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Yeo Valley Organic Unsalted Butter 200g",
+    "notes": ""
+  },
+  {
+    "name": "Cawston Press Cloudy Apple Juice",
+    "category": "Drinks",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Cawston Press Cloudy Apple Juice 1L",
+    "notes": ""
+  },
+  {
+    "name": "Dalston's Sparkling Cherry",
+    "category": "Drinks",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Dalston's Sparkling Cherry 4x330ml",
+    "notes": ""
+  },
+  {
+    "name": "London Essence Pink Grapefruit",
+    "category": "Drinks",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "London Essence Co Pink Grapefruit Cans 6x150ml",
+    "notes": ""
+  },
+  {
+    "name": "Caffeinated Diet Coke / Pepsi Max",
+    "category": "Drinks",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Pepsi Diet",
+    "notes": "https://www.ocado.com/products/pepsi-diet/411796011"
+  },
+  {
+    "name": "Strong Roots Sweet Potato Fries",
+    "category": "Frozen",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Strong Roots Oven Baked Sweet Potato Fries 500g",
+    "notes": ""
+  },
+  {
+    "name": "Aunt Bessie's Roast Potatoes",
+    "category": "Frozen",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Aunt Bessie's Roast Potatoes 1.1kg",
+    "notes": ""
+  },
+  {
+    "name": "M&S Seedless Easy Peelers",
+    "category": "Fruit",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "M&S Taste Buds Seedless Easy Peelers 500g",
+    "notes": ""
+  },
+  {
+    "name": "Westlab Epsom Salts",
+    "category": "Health",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Westlab Epsom Salts 2kg",
+    "notes": ""
+  },
+  {
+    "name": "Haliborange Omega-3 Gummies",
+    "category": "Health",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Haliborange Kid's Softies Omega-3 Multivitamin Gummies",
+    "notes": "Kids"
+  },
+  {
+    "name": "Bioglan SmartKids Happy Tummies",
+    "category": "Health",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Bioglan SmartKids Vitagummies Happy Tummies 30",
+    "notes": "Kids"
+  },
+  {
+    "name": "Haliborange Calcium & Vit D",
+    "category": "Health",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Haliborange Kid's Softies Calcium Vitamin D Gummies",
+    "notes": "Kids"
+  },
+  {
+    "name": "Laundry Soap",
+    "category": "Household",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Ecover Delicate Laundry Liquid 16 Washes",
+    "notes": "https://www.ocado.com/products/ecover-delicate-laundry-liquid-16-washes/261258011"
+  },
+  {
+    "name": "Collective Suckies Strawberry",
+    "category": "Snacks",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "The Collective Suckies Strawberry Yoghurt 90g",
+    "notes": "Kids"
+  },
+  {
+    "name": "Collective Suckies Raspberry",
+    "category": "Snacks",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "The Collective Suckies Raspberry Yoghurt 90g",
+    "notes": "Kids"
+  },
+  {
+    "name": "Collective Suckies Peach & Apricot",
+    "category": "Snacks",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "The Collective Suckies Peach Apricot Yoghurt 90g",
+    "notes": "Kids"
+  },
+  {
+    "name": "Sliced Turkey",
+    "category": "Snacks",
+    "tier": 2,
+    "qty": 2,
+    "search_term": "M&S British Wafer Thin Turkey Breast Slices",
+    "notes": ""
+  },
+  {
+    "name": "Cauliflower",
+    "category": "Veg",
+    "tier": 2,
+    "qty": 1,
+    "search_term": "Ocado Cauliflower",
+    "notes": ""
+  },
+  {
+    "name": "GI High Protein Spaghetti",
+    "category": "Pasta",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "GI Pasta High Protein Fibre Low Glycaemic Spaghetti 250g",
+    "notes": ""
+  },
+  {
+    "name": "Garofalo High Protein Mezze Maniche",
+    "category": "Pasta",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Garofalo High Protein Mezze Maniche Pasta 500g",
+    "notes": ""
+  },
+  {
+    "name": "Pots & Co Little Chocolate Pots",
+    "category": "Treats",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Pots Co Little Pots of Chocolate 4x50g",
+    "notes": ""
+  },
+  {
+    "name": "Pots & Co Salted Caramel Ganache",
+    "category": "Treats",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Pots Co Salted Caramel Chocolate Ganache Twin Pack",
+    "notes": ""
+  },
+  {
+    "name": "Gran Luchito Corn Tortilla Chips",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Gran Luchito Lightly Salted Corn Tortilla Chips 170g",
+    "notes": ""
+  },
+  {
+    "name": "Huligan Pretzel Honey Mustard",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Huligan Pretzel Crush Honey Mustard 65g",
+    "notes": ""
+  },
+  {
+    "name": "Crazy Jack Organic Cranberries",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Crazy Jack Organic Cranberries 100g",
+    "notes": ""
+  },
+  {
+    "name": "Giving Tree Freeze Dried Strawberry",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Giving Tree Freeze Dried Strawberry Crisps 38g",
+    "notes": ""
+  },
+  {
+    "name": "BEAR Coconut Chips",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "BEAR Fruit Dried Coconut Chips 25g",
+    "notes": ""
+  },
+  {
+    "name": "Nairn's Dark Choc & Orange Biscuits",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Nairn's Dark Chocolate Orange Oat Biscuits 200g",
+    "notes": ""
+  },
+  {
+    "name": "GAIL's Seeded Crackers",
+    "category": "Snacks",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "GAIL's Seeded Crackers 200g",
+    "notes": ""
+  },
+  {
+    "name": "Ecover Toilet Cleaner",
+    "category": "Household",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Ecover Toilet Cleaner Power 750ml",
+    "notes": ""
+  },
+  {
+    "name": "Duck Toilet Gel",
+    "category": "Household",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Duck Deep Action Gel Toilet Liquid Cleaner Marine 750ml",
+    "notes": ""
+  },
+  {
+    "name": "Ecozone Dishwasher Tablets",
+    "category": "Household",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Ecozone Optimum All-in-One Dishwasher Tablets 30",
+    "notes": ""
+  },
+  {
+    "name": "Neat Dishwasher Tablets",
+    "category": "Household",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Neat All in One Dishwasher Tablets Lemon 30",
+    "notes": ""
+  },
+  {
+    "name": "Cushelle Toilet Roll Mega 12pk",
+    "category": "Household",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Cushelle Original Mega Toilet Rolls 12 pack",
+    "notes": ""
+  },
+  {
+    "name": "Ocado Compostable Caddy Liners",
+    "category": "Household",
+    "tier": 3,
+    "qty": 1,
+    "search_term": "Ocado Compostable Caddy Liners 5L 20pk",
+    "notes": ""
+  }
+];
+
+function upcomingWednesday() {
+  const today = new Date();
+  const day = today.getDay(); // 0=Sun .. 3=Wed .. 6=Sat
+  const delta = (3 - day + 7) % 7;
+  const wed = new Date(today);
+  wed.setDate(today.getDate() + delta);
+  return wed.toISOString().slice(0, 10);
+}
+
+document.getElementById('week').textContent = upcomingWednesday();
+
+function render() {
+  const container = document.getElementById('items');
+  const groups = {};
+  ITEMS.forEach((item, idx) => {
+    const cat = item.category || 'Other';
+    (groups[cat] ||= []).push({ ...item, idx });
+  });
+
+  for (const cat of Object.keys(groups).sort()) {
+    const header = document.createElement('div');
+    header.className = 'category';
+    header.textContent = cat;
+    container.appendChild(header);
+
+    for (const item of groups[cat]) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.dataset.idx = item.idx;
+      row.innerHTML = `
+        <input type="checkbox" id="i${item.idx}" data-idx="${item.idx}">
+        <label for="i${item.idx}">${escapeHtml(item.name)}</label>
+        <input type="number" class="qty" min="1" max="20" value="${item.qty}" data-idx="${item.idx}" disabled>
+      `;
+      container.appendChild(row);
+
+      const cb = row.querySelector('input[type=checkbox]');
+      const qty = row.querySelector('input.qty');
+      cb.addEventListener('change', () => {
+        row.classList.toggle('checked', cb.checked);
+        qty.disabled = !cb.checked;
+        updateCount();
+      });
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function updateCount() {
+  const n = document.querySelectorAll('input[type=checkbox]:checked').length;
+  document.getElementById('count').textContent = String(n);
+}
+
+function exportJson() {
+  const selected = [];
+  document.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx, 10);
+    const item = ITEMS[idx];
+    const qtyInput = document.querySelector(`input.qty[data-idx="${idx}"]`);
+    const entry = {
+      name: item.name,
+      qty: parseInt(qtyInput.value, 10) || 1,
+      search_term: item.search_term,
+    };
+    if (item.notes) entry.notes = item.notes;
+    selected.push(entry);
+  });
+  if (selected.length === 0) {
+    document.getElementById('status').textContent = 'Nothing selected.';
+    return;
+  }
+  const out = {
+    week: document.getElementById('week').textContent,
+    tier2_yes: selected,
+  };
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ocado_tuesday.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  document.getElementById('status').textContent = `Exported ${selected.length} items to ocado_tuesday.json`;
+}
+
+document.getElementById('export-btn').addEventListener('click', exportJson);
+
+render();
+updateCount();
+</script>
+</body>
+</html>
