@@ -1,7 +1,9 @@
 """Ocado Tuesday automation script."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -39,3 +41,34 @@ def load_tier1(xlsx_path: Path) -> list[Item]:
             )
         )
     return items
+
+
+def upcoming_wednesday(today: date) -> date:
+    """The Wednesday on or after `today`."""
+    # Monday=0 ... Wednesday=2 ... Sunday=6
+    delta = (2 - today.weekday()) % 7
+    return today + timedelta(days=delta)
+
+
+def load_tier2(json_path: Path) -> tuple[list[Item], str]:
+    """Return (items, week_string). Raises FileNotFoundError if missing."""
+    if not json_path.exists():
+        raise FileNotFoundError(json_path)
+    with json_path.open() as f:
+        data = json.load(f)
+    week_str = str(data.get("week", "")).strip()
+    items: list[Item] = []
+    for entry in data.get("tier2_yes", []):
+        name = str(entry.get("name", "")).strip()
+        if not name:
+            continue
+        items.append(
+            Item(
+                name=name,
+                qty=int(entry.get("qty", 1)),
+                search_term=str(entry.get("search_term") or name).strip(),
+                notes=str(entry.get("notes") or "").strip(),
+                source="tier2",
+            )
+        )
+    return items, week_str
