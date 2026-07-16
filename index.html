@@ -47,15 +47,53 @@
     cursor: pointer;
     user-select: none;
   }
-  .item .qty {
-    width: 56px;
-    padding: 6px;
+  .qty-wrap {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
     border: 1px solid #ccc;
-    border-radius: 4px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .qty-btn {
+    /* 44px tall = Apple's minimum comfortable tap target */
+    width: 40px;
+    height: 44px;
+    flex: none;
+    padding: 0;
+    font-size: 1.35rem;
+    line-height: 1;
+    font-weight: 600;
+    background: #f4eef9;
+    color: #5a2d8c;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    /* stop iOS double-tap-to-zoom and long-press text selection */
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .qty-btn:active:not(:disabled) { background: #d9c2ee; }
+  .qty-btn:disabled { background: #f5f5f5; color: #ccc; cursor: default; }
+  .item .qty {
+    width: 40px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    border-left: 1px solid #e6e6e6;
+    border-right: 1px solid #e6e6e6;
     font-size: 1rem;
     text-align: center;
+    background: #fff;
+    color: #222;
+    /* iOS zooms the page if font-size < 16px on focus; 1rem = 16px avoids it */
+    -webkit-appearance: none;
+    appearance: none;
   }
   .item .qty:disabled { background: #f5f5f5; color: #aaa; }
+  .qty-wrap:has(.qty:disabled) { border-color: #e0e0e0; }
   .controls {
     position: fixed;
     bottom: 0;
@@ -105,7 +143,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 2,
     "search_term": "M&S 2 Chicken Kyivs 320g",
-    "notes": "Rotate with other proteins"
+    "notes": "https://www.ocado.com/products/m-s-2-chicken-kyivs/516306011"
   },
   {
     "name": "M&S Organic Chicken Drumsticks",
@@ -121,7 +159,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 2,
     "search_term": "M&S Select Farms British 2 Duck Breast Portions 265g",
-    "notes": "Buy 2 for \u00a310 deal"
+    "notes": "https://www.ocado.com/products/m-s-select-farms-british-2-duck-breast-portions/516324011"
   },
   {
     "name": "M&S Scottish Salmon Fillets",
@@ -137,7 +175,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Unearthed Mild Kabanos 105g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/unearthed-mild-kabanos/609855011"
   },
   {
     "name": "Pork Chops",
@@ -145,7 +183,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "M&S Heritage Gold British Outdoor Bred 2 Thick Cut Pork Chops",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/m-s-heritage-gold-british-outdoor-bred-2-thick-cut-pork-chops/527845011"
   },
   {
     "name": "Turkey Steaks",
@@ -177,7 +215,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Boursin Garlic Herbs Soft French Cheese 150g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/boursin-garlic-herbs-soft-french-cheese/37297011"
   },
   {
     "name": "M&S Shaved Parmigiano Reggiano",
@@ -185,7 +223,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "M&S Shaved Parmigiano Reggiano 80g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/m-s-shaved-parmigiano-reggiano/518108011"
   },
   {
     "name": "Cathedral City Mini Snack Cheeses",
@@ -201,7 +239,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Cheestrings Original 8x20g",
-    "notes": "Kids snack"
+    "notes": "https://www.ocado.com/products/cheestrings-original/28109011"
   },
   {
     "name": "Leerdammer",
@@ -209,7 +247,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 2,
     "search_term": "Leerdammer Original 200g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/leerdammer-original-dutch-cheese-slices/27775011"
   },
   {
     "name": "M&S Salted Butter from Brittany",
@@ -217,7 +255,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "M&S Salted Butter from Brittany 250g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/m-s-salted-butter-from-brittany/502857011"
   },
   {
     "name": "Yeo Valley Organic Unsalted Butter",
@@ -233,7 +271,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Cawston Press Cloudy Apple Juice 1L",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/cawston-press-cloudy-apple-juice/36122011"
   },
   {
     "name": "Dalston's Sparkling Cherry",
@@ -249,7 +287,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "London Essence Co Pink Grapefruit Cans 6x150ml",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/london-essence-co-pink-grapefruit-cans/609456011"
   },
   {
     "name": "Caffeinated Diet Coke / Pepsi Max",
@@ -265,7 +303,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Strong Roots Oven Baked Sweet Potato Fries 500g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/strong-roots-crispy-sweet-potato-fries/392406011"
   },
   {
     "name": "Aunt Bessie's Roast Potatoes",
@@ -281,7 +319,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 2,
     "search_term": "M&S Taste Buds Seedless Easy Peelers 500g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/m-s-taste-buds-seedless-easy-peelers/518331011"
   },
   {
     "name": "Westlab Epsom Salts",
@@ -289,7 +327,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Westlab Epsom Salts 2kg",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/westlab-epsom-salts/520768011"
   },
   {
     "name": "Haliborange Omega-3 Gummies",
@@ -297,7 +335,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Haliborange Kid's Softies Omega-3 Multivitamin Gummies",
-    "notes": "Kids"
+    "notes": "https://www.ocado.com/products/haliborange-kid-s-softies-omega-3-multivitamin-orange-gummies-3-12yrs/454850011"
   },
   {
     "name": "Bioglan SmartKids Happy Tummies",
@@ -313,7 +351,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Haliborange Kid's Softies Calcium Vitamin D Gummies",
-    "notes": "Kids"
+    "notes": "https://www.ocado.com/products/haliborange-kid-s-softies-calcium-vitamin-d-strawberry-gummies-3-12yrs/86505011"
   },
   {
     "name": "Laundry Soap",
@@ -353,7 +391,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 2,
     "search_term": "M&S British Wafer Thin Turkey Breast Slices",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/m-s-british-wafer-thin-turkey-breast-slices/515824011"
   },
   {
     "name": "Cauliflower",
@@ -361,7 +399,7 @@ const ITEMS = [
     "tier": 2,
     "qty": 1,
     "search_term": "Ocado Cauliflower",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/ocado-frozen-4-steam-bags-cauliflower-rice/418274011"
   },
   {
     "name": "GI High Protein Spaghetti",
@@ -385,7 +423,7 @@ const ITEMS = [
     "tier": 3,
     "qty": 1,
     "search_term": "Pots Co Little Pots of Chocolate 4x50g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/pots-co-little-pots-of-chocolate/327644011"
   },
   {
     "name": "Pots & Co Salted Caramel Ganache",
@@ -393,7 +431,7 @@ const ITEMS = [
     "tier": 3,
     "qty": 1,
     "search_term": "Pots Co Salted Caramel Chocolate Ganache Twin Pack",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/pots-co-salted-caramel-chocolate-ganache-twin-pack/658081011"
   },
   {
     "name": "Gran Luchito Corn Tortilla Chips",
@@ -401,7 +439,7 @@ const ITEMS = [
     "tier": 3,
     "qty": 1,
     "search_term": "Gran Luchito Lightly Salted Corn Tortilla Chips 170g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/gran-luchito-lightly-salted-corn-tortilla-chips/408686011"
   },
   {
     "name": "Huligan Pretzel Honey Mustard",
@@ -417,7 +455,7 @@ const ITEMS = [
     "tier": 3,
     "qty": 1,
     "search_term": "Crazy Jack Organic Cranberries 100g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/crazy-jack-organic-cranberries/86352011"
   },
   {
     "name": "Giving Tree Freeze Dried Strawberry",
@@ -425,7 +463,7 @@ const ITEMS = [
     "tier": 3,
     "qty": 1,
     "search_term": "Giving Tree Freeze Dried Strawberry Crisps 38g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/giving-tree-freeze-dried-strawberry-crisps/303022011"
   },
   {
     "name": "BEAR Coconut Chips",
@@ -449,7 +487,7 @@ const ITEMS = [
     "tier": 3,
     "qty": 1,
     "search_term": "GAIL's Seeded Crackers 200g",
-    "notes": ""
+    "notes": "https://www.ocado.com/products/gail-s-seeded-crackers/53550011"
   },
   {
     "name": "Ecover Toilet Cleaner",
@@ -500,6 +538,8 @@ const ITEMS = [
     "notes": ""
   }
 ];
+const QTY_MIN = 1;
+const QTY_MAX = 20;
 
 function upcomingWednesday() {
   const today = new Date();
@@ -530,20 +570,58 @@ function render() {
       const row = document.createElement('div');
       row.className = 'item';
       row.dataset.idx = item.idx;
+      const safeName = escapeHtml(item.name);
       row.innerHTML = `
         <input type="checkbox" id="i${item.idx}" data-idx="${item.idx}">
-        <label for="i${item.idx}">${escapeHtml(item.name)}</label>
-        <input type="number" class="qty" min="1" max="20" value="${item.qty}" data-idx="${item.idx}" disabled>
+        <label for="i${item.idx}">${safeName}</label>
+        <div class="qty-wrap">
+          <button type="button" class="qty-btn" data-step="-1" aria-label="Decrease quantity of ${safeName}" disabled>&minus;</button>
+          <input type="text" inputmode="numeric" pattern="[0-9]*" class="qty"
+                 value="${item.qty}" data-idx="${item.idx}"
+                 aria-label="Quantity of ${safeName}" disabled>
+          <button type="button" class="qty-btn" data-step="1" aria-label="Increase quantity of ${safeName}" disabled>+</button>
+        </div>
       `;
       container.appendChild(row);
 
       const cb = row.querySelector('input[type=checkbox]');
       const qty = row.querySelector('input.qty');
+      const btns = row.querySelectorAll('.qty-btn');
+
+      // Keep the value in range and reflect min/max on the buttons.
+      function clampQty(n) {
+        return Math.min(QTY_MAX, Math.max(QTY_MIN, n));
+      }
+      function syncQty(n) {
+        const v = clampQty(n);
+        qty.value = String(v);
+        const off = !cb.checked;
+        btns[0].disabled = off || v <= QTY_MIN;
+        btns[1].disabled = off || v >= QTY_MAX;
+      }
+
+      btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncQty((parseInt(qty.value, 10) || QTY_MIN) + parseInt(btn.dataset.step, 10));
+        });
+      });
+
+      // Typing directly still works; sanitise on the way out.
+      qty.addEventListener('input', () => {
+        qty.value = qty.value.replace(/[^0-9]/g, '');
+      });
+      qty.addEventListener('blur', () => {
+        syncQty(parseInt(qty.value, 10) || QTY_MIN);
+      });
+
       cb.addEventListener('change', () => {
         row.classList.toggle('checked', cb.checked);
         qty.disabled = !cb.checked;
+        syncQty(parseInt(qty.value, 10) || QTY_MIN);
         updateCount();
       });
+
+      syncQty(item.qty);
     }
   }
 }

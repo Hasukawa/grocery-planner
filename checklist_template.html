@@ -47,15 +47,53 @@
     cursor: pointer;
     user-select: none;
   }
-  .item .qty {
-    width: 56px;
-    padding: 6px;
+  .qty-wrap {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
     border: 1px solid #ccc;
-    border-radius: 4px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .qty-btn {
+    /* 44px tall = Apple's minimum comfortable tap target */
+    width: 40px;
+    height: 44px;
+    flex: none;
+    padding: 0;
+    font-size: 1.35rem;
+    line-height: 1;
+    font-weight: 600;
+    background: #f4eef9;
+    color: #5a2d8c;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    /* stop iOS double-tap-to-zoom and long-press text selection */
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .qty-btn:active:not(:disabled) { background: #d9c2ee; }
+  .qty-btn:disabled { background: #f5f5f5; color: #ccc; cursor: default; }
+  .item .qty {
+    width: 40px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    border-left: 1px solid #e6e6e6;
+    border-right: 1px solid #e6e6e6;
     font-size: 1rem;
     text-align: center;
+    background: #fff;
+    color: #222;
+    /* iOS zooms the page if font-size < 16px on focus; 1rem = 16px avoids it */
+    -webkit-appearance: none;
+    appearance: none;
   }
   .item .qty:disabled { background: #f5f5f5; color: #aaa; }
+  .qty-wrap:has(.qty:disabled) { border-color: #e0e0e0; }
   .controls {
     position: fixed;
     bottom: 0;
@@ -99,6 +137,8 @@
 
 <script>
 const ITEMS = __ITEMS_JSON__;
+const QTY_MIN = 1;
+const QTY_MAX = 20;
 
 function upcomingWednesday() {
   const today = new Date();
@@ -129,20 +169,58 @@ function render() {
       const row = document.createElement('div');
       row.className = 'item';
       row.dataset.idx = item.idx;
+      const safeName = escapeHtml(item.name);
       row.innerHTML = `
         <input type="checkbox" id="i${item.idx}" data-idx="${item.idx}">
-        <label for="i${item.idx}">${escapeHtml(item.name)}</label>
-        <input type="number" class="qty" min="1" max="20" value="${item.qty}" data-idx="${item.idx}" disabled>
+        <label for="i${item.idx}">${safeName}</label>
+        <div class="qty-wrap">
+          <button type="button" class="qty-btn" data-step="-1" aria-label="Decrease quantity of ${safeName}" disabled>&minus;</button>
+          <input type="text" inputmode="numeric" pattern="[0-9]*" class="qty"
+                 value="${item.qty}" data-idx="${item.idx}"
+                 aria-label="Quantity of ${safeName}" disabled>
+          <button type="button" class="qty-btn" data-step="1" aria-label="Increase quantity of ${safeName}" disabled>+</button>
+        </div>
       `;
       container.appendChild(row);
 
       const cb = row.querySelector('input[type=checkbox]');
       const qty = row.querySelector('input.qty');
+      const btns = row.querySelectorAll('.qty-btn');
+
+      // Keep the value in range and reflect min/max on the buttons.
+      function clampQty(n) {
+        return Math.min(QTY_MAX, Math.max(QTY_MIN, n));
+      }
+      function syncQty(n) {
+        const v = clampQty(n);
+        qty.value = String(v);
+        const off = !cb.checked;
+        btns[0].disabled = off || v <= QTY_MIN;
+        btns[1].disabled = off || v >= QTY_MAX;
+      }
+
+      btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncQty((parseInt(qty.value, 10) || QTY_MIN) + parseInt(btn.dataset.step, 10));
+        });
+      });
+
+      // Typing directly still works; sanitise on the way out.
+      qty.addEventListener('input', () => {
+        qty.value = qty.value.replace(/[^0-9]/g, '');
+      });
+      qty.addEventListener('blur', () => {
+        syncQty(parseInt(qty.value, 10) || QTY_MIN);
+      });
+
       cb.addEventListener('change', () => {
         row.classList.toggle('checked', cb.checked);
         qty.disabled = !cb.checked;
+        syncQty(parseInt(qty.value, 10) || QTY_MIN);
         updateCount();
       });
+
+      syncQty(item.qty);
     }
   }
 }
