@@ -98,6 +98,9 @@ SEL_LOGGED_OUT_MARKER = (
 
 ELEMENT_TIMEOUT_MS = 15_000
 NAVIGATION_TIMEOUT_MS = 30_000
+# The edit-order view renders every line item, so a large order is slow to
+# appear. Generous, because giving up early makes us clear nothing at all.
+EDIT_VIEW_TIMEOUT_MS = 30_000
 
 
 def setup_logging() -> Path:
@@ -633,7 +636,10 @@ def clear_reserved_order(page: Page, target_date: date) -> None:
 
     remove_btn = page.locator(SEL_REMOVE_ALL).first
     try:
-        remove_btn.wait_for(state="visible", timeout=5_000)
+        # A large order can take a while to render the edit view. 5s was too
+        # short on a ~70-item order: the button appeared moments after we gave
+        # up, and the run then piled new items on top of the uncleared order.
+        remove_btn.wait_for(state="visible", timeout=EDIT_VIEW_TIMEOUT_MS)
         remove_btn.click()
         log.info("Clicked 'Remove all'.")
         # Confirmation dialog: "Yes, empty trolley" / "Yes" depending on Ocado version.
@@ -668,7 +674,38 @@ def clear_reserved_order(page: Page, target_date: date) -> None:
                 log.info("No confirmation dialog — that's fine.")
     except PWTimeout:
         _debug_buttons(page, log, "no-remove-all-button")
-        log.info("No 'Remove all' button found in edit view — basket may already be empty.")
+        log.warning("No 'Remove all' button found after %.0fs.", EDIT_VIEW_TIMEOUT_MS / 1000)
+
+    # Verify rather than assume. Adding 40 items on top of an order we failed to
+    # empty is far worse than stopping, so confirm the basket really is empty.
+    page.wait_for_timeout(2_000)
+    remaining = read_basket_count(page, log)
+    if remaining is None:
+        log.warning("Could not read the basket counter — continuing, but check the order manually.")
+    elif remaining > 0:
+        raise RuntimeError(
+            f"Order still has {remaining} item(s) after the clear step — aborting before "
+            "adding anything on top. Empty the order manually in the browser, then re-run."
+        )
+    else:
+        log.info("Verified: order is empty.")
+
+
+def read_basket_count(page: Page, log: logging.Logger) -> int | None:
+    """Current basket item count from the header badge. None if unreadable.
+
+    The badge is absent entirely when the basket is empty, which we report as 0.
+    """
+    try:
+        return page.evaluate("""() => {
+            const el = document.querySelector('[data-test="basket-counter"]');
+            if (!el) return 0;                      // badge disappears when empty
+            const m = (el.textContent || '').match(/\\d+/);
+            return m ? parseInt(m[0], 10) : 0;
+        }""")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Basket counter unreadable: %s", e)
+        return None
 
 
 @dataclass
@@ -739,6 +776,51 @@ def dismiss_modals(page: Page, log: logging.Logger) -> None:
     if removed:
         log.info("   cleared ReactModalPortal via JS")
         page.wait_for_timeout(300)
+
+
+def install_modal_autodismiss(page: Page, log: logging.Logger) -> None:
+    """Let Playwright close the 'Favourites and Shopping Lists' modal automatically.
+
+    This modal appears a second or two after an item is added — usually while
+    we're reaching for the quantity '+' button, which is why qty>1 items were
+    the ones that failed. Rather than guessing how long to sleep before
+    dismissing it, register it as a blocking overlay: Playwright then closes it
+    on demand whenever it intercepts any action, wherever that happens.
+
+    Scoped to this specific modal by its heading, so the popups we genuinely
+    need to answer (edit-order 'Confirm', 'Yes, empty trolley') are untouched.
+    """
+    # Register the heading, not '.ReactModalPortal': the portal is a zero-size
+    # container, so Playwright never treats it as visible and the handler would
+    # never fire. The heading has a real bounding box and identifies this modal.
+    overlay = page.get_by_text("Favourites and Shopping Lists").first
+
+    def _close(_locator=None) -> None:
+        try:
+            close = page.locator(SEL_MODAL_CLOSE).first
+            if close.is_visible(timeout=1_000):
+                close.click(timeout=3_000)
+                log.info("   [auto] closed Favourites modal")
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        # Fallback only — ripping nodes out from under React leaves its state
+        # thinking the modal is open, so prefer the close button above.
+        try:
+            page.evaluate("""() => {
+                const p = document.querySelector('.ReactModalPortal');
+                if (p) p.innerHTML = '';
+            }""")
+            log.info("   [auto] cleared Favourites modal via JS")
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        page.add_locator_handler(overlay, _close, no_wait_after=True)
+        log.info("Registered auto-dismiss for the Favourites modal.")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Could not register modal auto-dismiss (%s) — "
+                    "falling back to manual dismissal.", e)
 
 
 def _try_search_suggestion(page: Page, log: logging.Logger) -> bool:
@@ -1125,8 +1207,10 @@ def main(argv: list[str] | None = None) -> int:
         page = context.pages[0] if context.pages else context.new_page()
 
         preserved: list[TrolleyItem] = []
+        run_ok = True
         try:
             ensure_logged_in(page)
+            install_modal_autodismiss(page, log)
             if args.capture_only:
                 log.info("Skipping basket clear (capture-only mode).")
                 page.goto(URL_HOME, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
@@ -1156,6 +1240,7 @@ def main(argv: list[str] | None = None) -> int:
                 restore_trolley_items(page, preserved, log)
 
         except Exception as e:  # noqa: BLE001
+            run_ok = False
             log.exception("Run aborted: %s", e)
 
         print_summary(results, log_path)
@@ -1174,7 +1259,10 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:  # noqa: BLE001
                 log.exception("Failed to write URLs: %s", e)
 
-        if not args.capture_only and confirm_checkout():
+        if not run_ok:
+            print("\n⚠  The run did not finish cleanly (see the error above), so the")
+            print("   checkout prompt is being skipped. Review the order in the browser.")
+        elif not args.capture_only and confirm_checkout():
             checkout(page, log)
 
         print("\nBrowser left open for review. Close the Chromium window when done — your session will be saved.")
