@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Ocado Tuesday Checklist</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4f4f6; min-height: 100vh; }
+
+.header { background: #6B3FA0; color: white; padding: 16px 18px 12px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(107,63,160,0.3); }
+.header h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+.header .week { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+.progress-bar { height: 5px; background: rgba(255,255,255,0.25); margin-top: 10px; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: #A8E063; border-radius: 3px; transition: width 0.4s ease; width: 0%; }
+.progress-label { font-size: 11px; opacity: 0.75; margin-top: 4px; text-align: right; }
+
+.category-group { padding: 0 12px; margin-top: 16px; }
+.category-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #999; padding: 0 4px 6px;
+}
+
+.item-card {
+  background: white; border-radius: 14px; padding: 13px 14px;
+  margin-bottom: 8px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid transparent;
+  transition: opacity 0.25s, border-color 0.2s;
+}
+.item-card.yes { border-left-color: #2E7D32; }
+.item-card.no  { border-left-color: #d32f2f; opacity: 0.45; }
+
+.item-info { flex: 1; min-width: 0; }
+.item-name  { font-size: 15px; font-weight: 650; color: #1a1a1a; line-height: 1.3; }
+.item-meta  { font-size: 12px; color: #999; margin-top: 3px; }
+
+.btn-group { display: flex; gap: 7px; flex-shrink: 0; }
+.btn {
+  width: 54px; height: 46px; border: 2px solid transparent;
+  border-radius: 11px; font-size: 13px; font-weight: 800; cursor: pointer;
+  transition: all 0.15s; letter-spacing: 0.02em;
+}
+.btn:active { transform: scale(0.91); }
+.btn-yes { background: #E8F5E9; color: #2E7D32; border-color: #A5D6A7; }
+.btn-yes.active { background: #2E7D32; color: white; border-color: #2E7D32; }
+.btn-no  { background: #FFEBEE; color: #c62828; border-color: #FFCDD2; }
+.btn-no.active  { background: #c62828; color: white; border-color: #c62828; }
+
+.summary-section {
+  margin: 16px 12px 0; padding: 16px; background: white;
+  border-radius: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); display: none;
+}
+.summary-section h2 { font-size: 16px; font-weight: 800; color: #2E7D32; margin-bottom: 12px; }
+.summary-empty { color: #aaa; font-size: 14px; padding: 4px 0; }
+.summary-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px;
+}
+.summary-row:last-child { border-bottom: none; }
+.summary-qty { font-weight: 800; color: #6B3FA0; font-size: 13px; }
+
+.bottom-bar { padding: 14px 12px 28px; display: flex; flex-direction: column; gap: 8px; }
+.btn-summary {
+  width: 100%; padding: 17px; background: #6B3FA0; color: white;
+  border: none; border-radius: 14px; font-size: 16px; font-weight: 800;
+  cursor: pointer; letter-spacing: 0.01em;
+  box-shadow: 0 4px 12px rgba(107,63,160,0.35);
+}
+.btn-summary:active { transform: scale(0.98); }
+.btn-export {
+  width: 100%; padding: 14px; background: #1a7f4f; color: white;
+  border: none; border-radius: 14px; font-size: 15px; font-weight: 800;
+  cursor: pointer; letter-spacing: 0.01em;
+  box-shadow: 0 4px 12px rgba(26,127,79,0.3);
+}
+.btn-export:active { transform: scale(0.98); }
+.btn-reset {
+  width: 100%; padding: 10px; background: none; color: #bbb;
+  border: none; font-size: 13px; cursor: pointer;
+}
+
+.export-toast {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+  background: #1a7f4f; color: white; padding: 10px 20px; border-radius: 20px;
+  font-size: 14px; font-weight: 700; opacity: 0; pointer-events: none;
+  transition: opacity 0.3s; white-space: nowrap;
+}
+.export-toast.show { opacity: 1; }
+
+.loading { text-align: center; padding: 60px 20px; color: #aaa; font-size: 15px; }
+.error   { text-align: center; padding: 40px 16px; color: #c62828; font-size: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🛒 Tuesday Checklist</h1>
+  <div class="week" id="week-label">Loading…</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div class="progress-label" id="progress-label">0 / 0 answered</div>
+</div>
+
+<div id="content"><div class="loading">Fetching your items…</div></div>
+
+<div id="summary-section" class="summary-section">
+  <h2>✅ Adding to this week's order:</h2>
+  <div id="summary-list"></div>
+</div>
+
+<div class="bottom-bar">
+  <button class="btn-summary" onclick="toggleSummary()">See what's being added →</button>
+  <button class="btn-export" onclick="exportForScript()">⬇ Export for Tuesday script</button>
+  <button class="btn-reset" onclick="resetWeek()">↺ Start over</button>
+</div>
+
+<div class="export-toast" id="export-toast">✓ ocado_tuesday.json saved to Downloads</div>
+
+<script>
+const FILE_ID = '1eqImF4tgcays2faPFQ51w0tJFz_xCPblrmC7cCQwhkc';
+
+function getNextWednesday() {
+  const d = new Date();
+  const diff = (3 - d.getDay() + 7) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
+}
+
+const WED = getNextWednesday();
+const STORE_KEY = 'ocado-checklist-' + WED;
+
+function getChoices() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; }
+}
+function saveChoice(name, val) {
+  const c = getChoices();
+  c[name] = val;
+  localStorage.setItem(STORE_KEY, JSON.stringify(c));
+}
+
+function parseMarkdown(content) {
+  const lines = content.split('\n');
+  const items = [];
+  let headers = [];
+  let inRotation = false;
+
+  for (const line of lines) {
+    if (!line.startsWith('|')) continue;
+    if (line.includes(':-:')) continue;
+    const cells = line.split('|').slice(1, -1).map(c => c.replace(/\\/g, '').trim());
+    if (!cells.length) continue;
+
+    if (cells.includes('Tier')) {
+      inRotation = true;
+      headers = cells;
+      continue;
+    }
+    if (!inRotation || !headers.length) continue;
+
+    const get = h => cells[headers.indexOf(h)] || '';
+    if (get('Tier') !== '2') continue;
+
+    const name = get('Item Name');
+    if (!name) continue;
+
+    items.push({
+      name,
+      category: get('Category'),
+      qty: get('Qty'),
+      notes: get('Notes'),
+      searchTerm: get('Ocado Search Term') || name
+    });
+  }
+  return items;
+}
+
+let allItems = [];
+
+function safeId(name) { return 'card_' + name.replace(/[^a-z0-9]/gi, '_'); }
+
+function updateProgress() {
+  const choices = getChoices();
+  const answered = allItems.filter(i => choices[i.name]).length;
+  const pct = allItems.length ? (answered / allItems.length * 100).toFixed(0) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = answered + ' / ' + allItems.length + ' answered';
+}
+
+function render(items) {
+  allItems = items;
+  const choices = getChoices();
+  const grouped = {};
+  for (const item of items) {
+    (grouped[item.category] = grouped[item.category] || []).push(item);
+  }
+
+  document.getElementById('content').innerHTML = Object.entries(grouped).map(([cat, catItems]) => `
+    <div class="category-group">
+      <div class="category-label">${cat}</div>
+      ${catItems.map(item => {
+        const ch = choices[item.name] || '';
+        const sid = safeId(item.name);
+        return `<div class="item-card ${ch}" id="${sid}">
+          <div class="item-info">
+            <div class="item-name">${item.name}</div>
+            <div class="item-meta">Qty: ${item.qty}${item.notes ? ' &middot; ' + item.notes : ''}</div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-yes ${ch==='yes'?'active':''}"
+              onclick="choose(${JSON.stringify(item.name)},'yes')">YES</button>
+            <button class="btn btn-no ${ch==='no'?'active':''}"
+              onclick="choose(${JSON.stringify(item.name)},'no')">NO</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `).join('');
+
+  updateProgress();
+}
+
+function choose(name, val) {
+  saveChoice(name, val);
+  const card = document.getElementById(safeId(name));
+  if (card) {
+    card.className = 'item-card ' + val;
+    card.querySelector('.btn-yes').classList.toggle('active', val === 'yes');
+    card.querySelector('.btn-no').classList.toggle('active', val === 'no');
+  }
+  updateProgress();
+  refreshSummary();
+}
+
+function refreshSummary() {
+  const choices = getChoices();
+  const yes = allItems.filter(i => choices[i.name] === 'yes');
+  const list = document.getElementById('summary-list');
+  if (!yes.length) {
+    list.innerHTML = '<div class="summary-empty">Tap YES on items you need.</div>';
+  } else {
+    list.innerHTML = yes.map(i =>
+      `<div class="summary-row"><span>${i.name}</span><span class="summary-qty">×${i.qty}</span></div>`
+    ).join('');
+  }
+}
+
+function toggleSummary() {
+  const s = document.getElementById('summary-section');
+  refreshSummary();
+  s.style.display = s.style.display === 'block' ? 'none' : 'block';
+  if (s.style.display === 'block') s.scrollIntoView({ behavior: 'smooth' });
+}
+
+function exportForScript() {
+  const choices = getChoices();
+  const yes = allItems.filter(i => choices[i.name] === 'yes');
+
+  const payload = {
+    week: WED,
+    exported_at: new Date().toISOString(),
+    tier2_yes: yes.map(i => {
+      const item = { name: i.name, qty: parseInt(i.qty) || 1, search_term: i.searchTerm };
+      if (i.notes && i.notes.startsWith('https://www.ocado.com')) item.notes = i.notes;
+      return item;
+    })
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ocado_tuesday.json';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  const toast = document.getElementById('export-toast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function resetWeek() {
+  if (confirm('Clear all choices for this week and start over?')) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+}
+
+// Set week label
+document.getElementById('week-label').textContent =
+  'For Wednesday ' + new Date(WED + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+function extractString(result) {
+  if (result === null || result === undefined) return '';
+  if (typeof result === 'string') {
+    const t = result.trim();
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try { return extractString(JSON.parse(t)); } catch {}
+    }
+    return result;
+  }
+  if (Array.isArray(result)) {
+    return result.map(item => {
+      if (typeof item === 'string') return extractString(item);
+      if (item && typeof item === 'object') return extractString(item.text ?? item.content ?? item);
+      return '';
+    }).join('');
+  }
+  if (typeof result === 'object') {
+    for (const key of ['fileContent', 'text', 'body', 'data']) {
+      if (typeof result[key] === 'string') return extractString(result[key]);
+    }
+    if (Array.isArray(result.content)) return extractString(result.content);
+    if (typeof result.content === 'string') return extractString(result.content);
+    return JSON.stringify(result);
+  }
+  return String(result);
+}
+
+// Load data
+window.cowork.callMcpTool('mcp__6bdfee58-f183-4727-a143-0dbeb9d2eae8__read_file_content', { fileId: FILE_ID })
+  .then(result => {
+    const raw = extractString(result);
+    const items = parseMarkdown(raw);
+    if (!items.length) {
+      document.getElementById('content').innerHTML =
+        '<div class="error">Couldn\'t find any Tier 2 items.<br><small style="color:#aaa">' +
+        'Raw: ' + JSON.stringify(result).slice(0, 200) + '</small></div>';
+      return;
+    }
+    render(items);
+  })
+  .catch(err => {
+    document.getElementById('content').innerHTML =
+      '<div class="error">Failed to load spreadsheet.<br>' + (err.message || err) + '</div>';
+  });
+</script>
+</body>
+</html>

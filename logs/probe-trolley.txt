@@ -1,0 +1,77 @@
+Probe run 2026-08-04 22:19
+======================================================================
+
+## Opening trolley panel
+   clicked basket button OK
+
+## Q1: network JSON responses mentioning basket/trolley/cart/order
+
+   URL: https://www.ocado.com/api/order/v6/orders
+      (no obvious item list; top-level: ['entities', 'result', 'retentionPeriod', 'nextPageToken'])
+
+   URL: https://www.ocado.com/api/order/v6/orders
+      (no obvious item list; top-level: ['entities', 'result', 'retentionPeriod', 'nextPageToken'])
+
+   URL: https://www.ocado.com/api/order/v6/orders
+      (no obvious item list; top-level: ['entities', 'result', 'retentionPeriod', 'nextPageToken'])
+
+   URL: https://www.ocado.com/api/order/v6/orders
+      (no obvious item list; top-level: ['entities', 'result', 'retentionPeriod', 'nextPageToken'])
+
+   URL: https://www.ocado.com/api/ecomfulfillments/v1/order-tracking/delivery-status?orderId=1275725543305
+      (no obvious item list; top-level: ['orderId', 'bannerId', 'currentState', 'isExternalTracking'])
+
+   URL: https://www.ocado.com/api/order/v6/orders
+      (no obvious item list; top-level: ['entities', 'result', 'retentionPeriod', 'nextPageToken'])
+
+   URL: https://www.ocado.com/api/ecomfulfillments/v1/order-tracking/delivery-status?orderId=1275725543305
+      (no obvious item list; top-level: ['orderId', 'bannerId', 'currentState', 'isExternalTracking'])
+
+   URL: https://www.ocado.com/api/ecomfulfillments/v1/order-tracking/delivery-status?orderId=1220117593717
+      (no obvious item list; top-level: ['orderId', 'bannerId', 'currentState', 'isExternalTracking'])
+
+   URL: https://www.ocado.com/api/cart/v1/meta/carts/active/products
+      LIST items  (19 entries)  item keys: ['meta', 'productId']
+        sample: {
+  "meta": {
+    "favorite": true,
+    "incomplete": false,
+    "itemListName": "search: favorites",
+    "pageType": "SEARCH",
+    "pageViewId": "521ea6a4-c375-4758-b664-f384a75c43d2"
+  },
+  "productId": "099a14cd-ee9a-40bf-9597-43ad8d18ae7e"
+}
+
+## Q2: DOM — walking up from the trolley's checkout button
+   product links on WHOLE page: 88   <- what the old buggy scrape counted
+
+   ancestors of the checkout button (find the level whose link count == your real trolley item count):
+     L1: <div> links=0    data-test=None data-synthetics=None class='sc-1k9krmy-0 KaVBH salt-m-t--2'
+     L2: <div> links=0    data-test=None data-synthetics=None class='sc-mmemlz-0 kpQGEp'
+     L3: <div> links=0    data-test=None data-synthetics=None class='_dialog__footer_1dd1w_59'
+     L4: <div> links=38   data-test=None data-synthetics=None class='_dialog__content_1dd1w_105 _dialog__content--max-inline-sm_1dd1w_121 sc-raex2q-0'
+     L5: <div> links=38   data-test=None data-synthetics=None class='_dialog__flex-column_1dd1w_8'
+     L6: <div> links=38   data-test='expanded-trolley-drawer' data-synthetics=None class='ReactModal__Content ReactModal__Content--after-open sc-2ce2kr-0 bwqIEu'
+     L7: <div> links=38   data-test=None data-synthetics=None class='ReactModal__Overlay ReactModal__Overlay--after-open'
+     L8: <div> links=38   data-test=None data-synthetics=None class='ReactModalPortal'
+
+   attributes mentioning basket/trolley/cart (name: count):
+     basket-button: 1
+     basket-checkout-button: 1
+     basket-counter: 1
+     basket-live-region: 1
+     basket-price: 1
+     expanded-trolley: 1
+     expanded-trolley-basket-button: 1
+     expanded-trolley-basket-skip-link: 1
+     expanded-trolley-drawer: 1
+     expanded-trolley-list-item: 19
+     expanded-trolley-live-region: 1
+     expanded-trolley-savings: 1
+     expanded-trolley-total-note: 1
+     expanded-trolley-total-title: 1
+     quantity-in-basket: 19
+
+======================================================================
+Leaving browser open. Close the window when done.
