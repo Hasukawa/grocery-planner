@@ -379,6 +379,30 @@ def _debug_buttons(page: Page, log: logging.Logger, label: str) -> None:
 # them is essential: the drawer also contains recommendation carousels, so a
 # page-wide 'a[href*="/products/"]' scrape picks up ~4x too many items.
 JS_READ_TROLLEY = """() => {
+    // The quantity is not reliably in textContent — on Ocado it sits in an
+    // <input value>, so try every plausible location and report which worked.
+    function readQty(el) {
+        if (!el) return { raw: '', how: 'no-element', html: '' };
+        const html = (el.outerHTML || '').slice(0, 200);
+        if (el.value !== undefined && el.value !== null && String(el.value).trim() !== '') {
+            return { raw: String(el.value).trim(), how: 'value-prop', html };
+        }
+        const inner = el.querySelector('input, [aria-valuenow]');
+        if (inner) {
+            const iv = inner.value !== undefined && inner.value !== null ? String(inner.value).trim() : '';
+            if (iv) return { raw: iv, how: 'nested-input-value', html };
+            const av = inner.getAttribute('aria-valuenow');
+            if (av && av.trim()) return { raw: av.trim(), how: 'nested-aria-valuenow', html };
+        }
+        const text = (el.textContent || '').trim();
+        if (text) return { raw: text, how: 'textContent', html };
+        for (const attr of ['aria-valuenow', 'value', 'aria-label', 'title', 'data-value']) {
+            const v = el.getAttribute(attr);
+            if (v && v.trim()) return { raw: v.trim(), how: 'attr:' + attr, html };
+        }
+        return { raw: '', how: 'EMPTY', html };
+    }
+
     const rows = [...document.querySelectorAll('[data-test="expanded-trolley-list-item"]')];
     return rows.map(row => {
         const links = [...row.querySelectorAll('a[href*="/products/"]')];
@@ -388,11 +412,24 @@ JS_READ_TROLLEY = """() => {
         const name = links
             .map(a => (a.textContent || '').trim())
             .sort((a, b) => b.length - a.length)[0] || '';
-        const qtyEl = row.querySelector('[data-test="quantity-in-basket"]');
+
+        let q = readQty(row.querySelector('[data-test="quantity-in-basket"]'));
+        // Fallback: the row's own counter input, as used on product pages.
+        if (!q.raw) {
+            const alt = row.querySelector(
+                'input[data-test*="counter"], [data-test*="counter"] input, input[type="number"], input[inputmode="numeric"]'
+            );
+            if (alt) {
+                const av = String(alt.value || '').trim();
+                if (av) q = { raw: av, how: 'row-counter-input', html: (alt.outerHTML || '').slice(0, 200) };
+            }
+        }
         return {
             href: href.split('?')[0],
             name,
-            qtyRaw: qtyEl ? (qtyEl.textContent || '').trim() : '',
+            qtyRaw: q.raw,
+            qtyHow: q.how,
+            qtyHtml: q.html,
         };
     });
 }"""
@@ -425,6 +462,7 @@ def capture_trolley_items(page: Page, log: logging.Logger) -> list[TrolleyItem]:
     raw = page.evaluate(JS_READ_TROLLEY)
 
     items: list[TrolleyItem] = []
+    unread_qty = 0
     for entry in raw:
         href = entry.get("href") or ""
         if not href or "/products/" not in href:
@@ -432,10 +470,20 @@ def capture_trolley_items(page: Page, log: logging.Logger) -> list[TrolleyItem]:
             continue
         digits = re.search(r"\d+", entry.get("qtyRaw") or "")
         qty = int(digits.group()) if digits else 1
+        if not digits:
+            unread_qty += 1
+            # Log the markup once so a future format change is diagnosable.
+            if unread_qty == 1:
+                log.warning("   could not read quantity (how=%s) markup: %s",
+                            entry.get("qtyHow"), (entry.get("qtyHtml") or "")[:200])
         items.append(TrolleyItem(name=entry.get("name") or href, url=href, qty=qty))
-        log.info("   captured: %s x%d  (qty text: %r)",
-                 items[-1].name[:50], qty, entry.get("qtyRaw"))
+        log.info("   captured: %s x%d  (via %s, raw %r)",
+                 items[-1].name[:50], qty, entry.get("qtyHow"), entry.get("qtyRaw"))
 
+    if unread_qty:
+        log.warning("   !! %d/%d item(s) had unreadable quantity — assuming 1 each. "
+                    "Anything you had multiples of will come back as 1.",
+                    unread_qty, len(items))
     log.info("Trolley snapshot: %d item(s) to restore after clearing", len(items))
     dismiss_modals(page, log)
     return items
@@ -1008,6 +1056,9 @@ def probe_trolley(log: logging.Logger) -> int:
             print("=" * 41)
             print("Nothing was changed. If this list matches your trolley, the")
             print("real run will preserve exactly these items.")
+            print("\nCheck the quantities above against the trolley in the browser.")
+            print("If any are wrong, tell me the 'via ...' line from the log and")
+            print("I'll fix how the quantity is read.")
         except Exception as e:  # noqa: BLE001
             log.exception("Probe failed: %s", e)
         print("\nBrowser left open. Close the Chromium window when done.")
