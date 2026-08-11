@@ -269,6 +269,38 @@ def ensure_logged_in(page: Page) -> None:
         raise RuntimeError("Still not logged in after retry — aborting.")
 
 
+def _click_submit(page: Page, log: logging.Logger) -> bool:
+    """Click a login/continue submit control, by label or by type."""
+    for label in ("Log in", "Login", "Sign in", "Continue", "Next"):
+        try:
+            btn = page.get_by_role("button", name=label, exact=False).first
+            btn.wait_for(state="visible", timeout=2_500)
+            btn.click()
+            log.info("Clicked login button: %r", label)
+            return True
+        except PWTimeout:
+            continue
+    try:
+        page.locator('button[type="submit"], input[type="submit"]').first.click(timeout=5_000)
+        log.info("Clicked login button via type=submit")
+        return True
+    except PWTimeout:
+        pass
+    clicked = page.evaluate("""() => {
+        const labels = ['log in', 'login', 'sign in', 'continue', 'next'];
+        const els = [...document.querySelectorAll('button, [role="button"], input[type="submit"]')];
+        for (const el of els) {
+            const t = ((el.textContent || el.value || '')).trim().toLowerCase();
+            if (labels.includes(t)) { el.click(); return t; }
+        }
+        return null;
+    }""")
+    if clicked:
+        log.info("Clicked login button via JS: %r", clicked)
+        return True
+    return False
+
+
 def _auto_login(page: Page, log: logging.Logger) -> bool:
     """Attempt to log in using credentials stored in macOS Keychain.
 
@@ -307,12 +339,16 @@ def _auto_login(page: Page, log: logging.Logger) -> bool:
         try:
             pw_input.wait_for(state="visible", timeout=3_000)
         except PWTimeout:
-            # Password not visible yet — click Next/Continue to advance to step 2
-            page.locator('button[type="submit"], input[type="submit"], button:has-text("Next"), button:has-text("Continue")').first.click()
+            # Password not visible yet — advance to step 2 of the SSO flow
+            _click_submit(page, log)
             pw_input.wait_for(state="visible", timeout=10_000)
 
         pw_input.fill(password)
-        page.locator('button[type="submit"], input[type="submit"]').first.click()
+        # Ocado's submit control is labelled "Log in" and isn't type="submit",
+        # so match on the visible label first and fall back to the type.
+        if not _click_submit(page, log):
+            log.warning("Could not find a login submit button.")
+            return False
         try:
             page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT_MS)
         except PWTimeout:
@@ -523,6 +559,10 @@ def restore_trolley_items(page: Page, items: list[TrolleyItem], log: logging.Log
             add_btn.click()
             log.info("   added 1")
             page.wait_for_timeout(1_500)
+            if acknowledge_unavailable_dialog(page, log):
+                log.warning("   %s could not be added to this order — left in trolley",
+                            item.name[:50])
+                continue
             dismiss_modals(page, log)
 
             for n in range(item.qty - 1):
@@ -634,14 +674,51 @@ def clear_reserved_order(page: Page, target_date: date) -> None:
 
     _debug_screenshot(page, log, "after-popup-handler")
 
-    remove_btn = page.locator(SEL_REMOVE_ALL).first
+    # 'Empty trolley' is not always a <button> element, so button:has-text()
+    # misses it — get_by_role matches role="button" on any tag too.
+    cleared = False
+    remove_btn = None
+    labels = ("Empty trolley", "Remove all", "Clear trolley")
+    # Split the budget across the labels so a slow-rendering edit view still
+    # gets the full EDIT_VIEW_TIMEOUT_MS before we give up.
+    per_label_ms = EDIT_VIEW_TIMEOUT_MS // len(labels)
+    for label in labels:
+        candidate = page.get_by_role("button", name=label, exact=False).first
+        try:
+            candidate.wait_for(state="visible", timeout=per_label_ms)
+            remove_btn = candidate
+            log.info("Found clear control: %r", label)
+            break
+        except PWTimeout:
+            continue
+
+    if remove_btn is None:
+        # Last resort: click it directly in the DOM, whatever element it is.
+        js_label = page.evaluate("""() => {
+            const labels = ['Empty trolley', 'Remove all', 'Clear trolley'];
+            const els = [...document.querySelectorAll('button, [role="button"], a')];
+            for (const el of els) {
+                const t = (el.textContent || '').trim();
+                if (labels.some(l => t.toLowerCase() === l.toLowerCase())) { el.click(); return t; }
+            }
+            return null;
+        }""")
+        if js_label:
+            log.info("Clicked clear control via JS: %r", js_label)
+            cleared = True
+        else:
+            _debug_buttons(page, log, "no-remove-all-button")
+            raise RuntimeError(
+                "Could not find the 'Empty trolley' control in the edit view — aborting "
+                "before adding anything. The order was NOT cleared; empty it manually "
+                "in the browser and re-run."
+            )
+
     try:
-        # A large order can take a while to render the edit view. 5s was too
-        # short on a ~70-item order: the button appeared moments after we gave
-        # up, and the run then piled new items on top of the uncleared order.
-        remove_btn.wait_for(state="visible", timeout=EDIT_VIEW_TIMEOUT_MS)
-        remove_btn.click()
-        log.info("Clicked 'Remove all'.")
+        if remove_btn is not None:
+            remove_btn.click()
+            log.info("Clicked 'Empty trolley'.")
+            cleared = True
         # Confirmation dialog: "Yes, empty trolley" / "Yes" depending on Ocado version.
         # Use get_by_role first (catches <button> and role="button"), then JS fallback.
         confirmed = False
@@ -672,40 +749,68 @@ def clear_reserved_order(page: Page, target_date: date) -> None:
                 log.info("Confirmed removal via JS: %r", js_clicked)
             else:
                 log.info("No confirmation dialog — that's fine.")
-    except PWTimeout:
-        _debug_buttons(page, log, "no-remove-all-button")
-        log.warning("No 'Remove all' button found after %.0fs.", EDIT_VIEW_TIMEOUT_MS / 1000)
+    except PWTimeout as e:
+        _debug_buttons(page, log, "clear-click-failed")
+        raise RuntimeError(f"Clear step failed while clicking through: {e}") from e
 
-    # Verify rather than assume. Adding 40 items on top of an order we failed to
-    # empty is far worse than stopping, so confirm the basket really is empty.
-    page.wait_for_timeout(2_000)
-    remaining = read_basket_count(page, log)
+    page.wait_for_timeout(3_000)
+    remaining, how = count_order_items(page, log)
+    log.info("Post-clear item count: %s (via %s)", remaining, how)
     if remaining is None:
-        log.warning("Could not read the basket counter — continuing, but check the order manually.")
-    elif remaining > 0:
+        raise RuntimeError(
+            "Could not confirm the order was emptied — aborting rather than risk adding "
+            "on top of an uncleared order. Check the order in the browser, then re-run."
+        )
+    if remaining > 0:
         raise RuntimeError(
             f"Order still has {remaining} item(s) after the clear step — aborting before "
             "adding anything on top. Empty the order manually in the browser, then re-run."
         )
-    else:
-        log.info("Verified: order is empty.")
+    log.info("Verified: order is empty (via %s).", how)
 
 
-def read_basket_count(page: Page, log: logging.Logger) -> int | None:
-    """Current basket item count from the header badge. None if unreadable.
+def count_order_items(page: Page, log: logging.Logger) -> tuple[int | None, str]:
+    """Count items currently in the order/trolley. Returns (count, how).
 
-    The badge is absent entirely when the basket is empty, which we report as 0.
+    Tries several signals because no single one covers every view. Critically,
+    it distinguishes "confirmed zero" from "couldn't tell": the header badge
+    vanishes in the edit view, and reading its absence as zero is what let a
+    failed clear report success on a 65-item order.
     """
     try:
-        return page.evaluate("""() => {
+        res = page.evaluate("""() => {
+            // Trolley drawer rows.
+            const drawer = document.querySelectorAll('[data-test="expanded-trolley-list-item"]').length;
+            if (drawer > 0) return { count: drawer, how: 'trolley-rows' };
+
+            // Edit view: every order line exposes a "... click to edit" control.
+            const editRows = [...document.querySelectorAll('button, [role="button"]')]
+                .filter(b => /click to edit/i.test(b.textContent || '')).length;
+            if (editRows > 0) return { count: editRows, how: 'edit-rows' };
+
+            // Summary panel, e.g. "65 items".
+            const m = (document.body.innerText || '').match(/(\\d+)\\s+items?\\b/i);
+            if (m) return { count: parseInt(m[1], 10), how: 'summary-text' };
+
+            // Header badge (absent in the edit view, and absent when empty).
             const el = document.querySelector('[data-test="basket-counter"]');
-            if (!el) return 0;                      // badge disappears when empty
-            const m = (el.textContent || '').match(/\\d+/);
-            return m ? parseInt(m[0], 10) : 0;
+            if (el) {
+                const n = (el.textContent || '').match(/\\d+/);
+                if (n) return { count: parseInt(n[0], 10), how: 'header-badge' };
+            }
+
+            // An explicit empty state is the only thing that proves zero.
+            const txt = (document.body.innerText || '').toLowerCase();
+            for (const phrase of ['trolley is empty', 'your trolley is empty',
+                                  'no items', 'nothing in your trolley']) {
+                if (txt.includes(phrase)) return { count: 0, how: 'empty-state-text' };
+            }
+            return { count: null, how: 'indeterminate' };
         }""")
+        return res.get("count"), res.get("how", "?")
     except Exception as e:  # noqa: BLE001
-        log.warning("Basket counter unreadable: %s", e)
-        return None
+        log.warning("Could not count order items: %s", e)
+        return None, "error"
 
 
 @dataclass
@@ -776,6 +881,63 @@ def dismiss_modals(page: Page, log: logging.Logger) -> None:
     if removed:
         log.info("   cleared ReactModalPortal via JS")
         page.wait_for_timeout(300)
+
+
+# Phrases Ocado uses when an item can't join this delivery and stays in the
+# trolley instead. Requiring one of these before clicking 'Confirm' keeps us
+# from mistaking this for the edit-order confirmation.
+UNAVAILABLE_PHRASES = (
+    "not available",
+    "unavailable",
+    "stay in your trolley",
+    "remain in your trolley",
+    "cannot be added",
+    "can't be added",
+    "won't be added",
+    "out of stock",
+)
+
+
+def acknowledge_unavailable_dialog(page: Page, log: logging.Logger) -> str | None:
+    """Dismiss the 'item isn't available, it'll stay in your trolley' dialog.
+
+    Returns the dialog text if one was handled, else None. Left unanswered this
+    dialog blocks every later action, which is what stalled the restore step.
+    """
+    try:
+        info = page.evaluate("""(phrases) => {
+            const portal = document.querySelector('.ReactModalPortal');
+            if (!portal || portal.children.length === 0) return null;
+            const text = (portal.innerText || '').trim();
+            const low = text.toLowerCase();
+            if (!phrases.some(p => low.includes(p))) return null;
+            return { text: text.slice(0, 300) };
+        }""", list(UNAVAILABLE_PHRASES))
+    except Exception:  # noqa: BLE001
+        return None
+    if not info:
+        return None
+
+    text = info["text"]
+    log.warning("   item unavailable for this delivery — dialog said: %s",
+                text.replace("\n", " / ")[:160])
+    for label in ("Confirm", "OK", "Okay", "Got it", "Continue"):
+        try:
+            btn = page.get_by_role("button", name=label, exact=False).first
+            btn.wait_for(state="visible", timeout=1_500)
+            btn.click()
+            log.info("   acknowledged with %r", label)
+            page.wait_for_timeout(500)
+            return text
+        except PWTimeout:
+            continue
+    # Couldn't find a button — clear it so it stops blocking later actions.
+    page.evaluate("""() => {
+        const p = document.querySelector('.ReactModalPortal');
+        if (p) p.innerHTML = '';
+    }""")
+    log.warning("   no acknowledge button found — cleared the dialog")
+    return text
 
 
 def install_modal_autodismiss(page: Page, log: logging.Logger) -> None:
@@ -909,6 +1071,8 @@ def add_item(page: Page, item: Item, capture_only: bool = False) -> Result:
         add_btn.click()
         log.info("   added 1")
         page.wait_for_timeout(1_500)  # give the favourites modal time to appear
+        if acknowledge_unavailable_dialog(page, log):
+            return Result(item, "not_found", "unavailable for this delivery date")
         dismiss_modals(page, log)
 
         for n in range(item.qty - 1):

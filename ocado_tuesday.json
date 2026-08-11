@@ -1,35 +1,17 @@
 {
-  "week": "2026-08-05",
+  "week": "2026-08-12",
   "tier2_yes": [
     {
-      "name": "Boursin Garlic & Herbs",
+      "name": "Leerdammer",
       "qty": 1,
-      "search_term": "Boursin Garlic Herbs Soft French Cheese 150g",
-      "notes": "https://www.ocado.com/products/boursin-garlic-herbs-soft-french-cheese/37297011"
+      "search_term": "Leerdammer Original 200g",
+      "notes": "https://www.ocado.com/products/leerdammer-original-dutch-cheese-slices/27775011"
     },
     {
-      "name": "Cheestrings Original",
-      "qty": 2,
-      "search_term": "Cheestrings Original 8x20g",
-      "notes": "https://www.ocado.com/products/cheestrings-original/28109011"
-    },
-    {
-      "name": "M&S Salted Butter from Brittany",
+      "name": "Caffeinated Diet Coke / Pepsi Max",
       "qty": 1,
-      "search_term": "M&S Salted Butter from Brittany 250g",
-      "notes": "https://www.ocado.com/products/m-s-salted-butter-from-brittany/502857011"
-    },
-    {
-      "name": "Cawston Press Cloudy Apple Juice",
-      "qty": 1,
-      "search_term": "Cawston Press Cloudy Apple Juice 1L",
-      "notes": "https://www.ocado.com/products/cawston-press-cloudy-apple-juice/36122011"
-    },
-    {
-      "name": "London Essence Pink Grapefruit",
-      "qty": 1,
-      "search_term": "London Essence Co Pink Grapefruit Cans 6x150ml",
-      "notes": "https://www.ocado.com/products/london-essence-co-pink-grapefruit-cans/609456011"
+      "search_term": "Pepsi Diet",
+      "notes": "https://www.ocado.com/products/pepsi-diet/411796011"
     },
     {
       "name": "M&S Seedless Easy Peelers",
@@ -38,51 +20,9 @@
       "notes": "https://www.ocado.com/products/m-s-taste-buds-seedless-easy-peelers/518331011"
     },
     {
-      "name": "Westlab Epsom Salts",
-      "qty": 1,
-      "search_term": "Westlab Epsom Salts 2kg",
-      "notes": "https://www.ocado.com/products/westlab-epsom-salts/520768011"
-    },
-    {
-      "name": "Haliborange Omega-3 Gummies",
-      "qty": 1,
-      "search_term": "Haliborange Kid's Softies Omega-3 Multivitamin Gummies",
-      "notes": "https://www.ocado.com/products/haliborange-kid-s-softies-omega-3-multivitamin-orange-gummies-3-12yrs/454850011"
-    },
-    {
-      "name": "Bioglan SmartKids Happy Tummies",
-      "qty": 1,
-      "search_term": "Bioglan SmartKids Vitagummies Happy Tummies 30",
-      "notes": "Kids"
-    },
-    {
-      "name": "Haliborange Calcium & Vit D",
-      "qty": 1,
-      "search_term": "Haliborange Kid's Softies Calcium Vitamin D Gummies",
-      "notes": "https://www.ocado.com/products/haliborange-kid-s-softies-calcium-vitamin-d-strawberry-gummies-3-12yrs/86505011"
-    },
-    {
       "name": "Cushelle Toilet Roll Mega 12pk",
       "qty": 1,
       "search_term": "Cushelle Original Mega Toilet Rolls 12 pack"
-    },
-    {
-      "name": "M&S 2 Chicken Kyivs",
-      "qty": 2,
-      "search_term": "M&S 2 Chicken Kyivs 320g",
-      "notes": "https://www.ocado.com/products/m-s-2-chicken-kyivs/516306011"
-    },
-    {
-      "name": "M&S Organic Chicken Drumsticks",
-      "qty": 3,
-      "search_term": "M&S Organic British Chicken Drumsticks 500g",
-      "notes": "Rotate with other proteins"
-    },
-    {
-      "name": "M&S Duck Breast Portions",
-      "qty": 2,
-      "search_term": "M&S Select Farms British 2 Duck Breast Portions 265g",
-      "notes": "https://www.ocado.com/products/m-s-select-farms-british-2-duck-breast-portions/516324011"
     },
     {
       "name": "M&S Scottish Salmon Fillets",
@@ -91,10 +31,10 @@
       "notes": "Rotate with other proteins"
     },
     {
-      "name": "Unearthed Mild Kabanos",
-      "qty": 2,
-      "search_term": "Unearthed Mild Kabanos 105g",
-      "notes": "https://www.ocado.com/products/unearthed-mild-kabanos/609855011"
+      "name": "Pork Chops",
+      "qty": 1,
+      "search_term": "M&S Heritage Gold British Outdoor Bred 2 Thick Cut Pork Chops",
+      "notes": "https://www.ocado.com/products/m-s-heritage-gold-british-outdoor-bred-2-thick-cut-pork-chops/527845011"
     },
     {
       "name": "Gran Luchito Corn Tortilla Chips",
@@ -103,21 +43,15 @@
       "notes": "https://www.ocado.com/products/gran-luchito-lightly-salted-corn-tortilla-chips/408686011"
     },
     {
-      "name": "Huligan Pretzel Honey Mustard",
-      "qty": 2,
-      "search_term": "Huligan Pretzel Crush Honey Mustard 65g"
+      "name": "Nairn's Dark Choc & Orange Biscuits",
+      "qty": 1,
+      "search_term": "Nairn's Dark Chocolate Orange Oat Biscuits 200g"
     },
     {
-      "name": "Pots & Co Little Chocolate Pots",
+      "name": "Cauliflower",
       "qty": 1,
-      "search_term": "Pots Co Little Pots of Chocolate 4x50g",
-      "notes": "https://www.ocado.com/products/pots-co-little-pots-of-chocolate/327644011"
-    },
-    {
-      "name": "Pots & Co Salted Caramel Ganache",
-      "qty": 1,
-      "search_term": "Pots Co Salted Caramel Chocolate Ganache Twin Pack",
-      "notes": "https://www.ocado.com/products/pots-co-salted-caramel-chocolate-ganache-twin-pack/658081011"
+      "search_term": "Ocado Cauliflower",
+      "notes": "https://www.ocado.com/products/ocado-frozen-4-steam-bags-cauliflower-rice/418274011"
     }
   ]
 }
